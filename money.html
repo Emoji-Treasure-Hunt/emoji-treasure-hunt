@@ -1,0 +1,1829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emoji Treasure Hunt</title>
+    
+    <!-- SOCKET.IO & SERVER CONNECTION SCRIPTS -->
+    <script src="https://cdn.socket.io/4.4.1/socket.io.min.js"></script>
+    <script>
+        const socket = io(window.location.origin);
+
+        socket.on('connect', () => {
+            console.log("Connected to the game server successfully!");
+        });
+
+        function joinGameQueue(stakeAmount, groupName) {
+            selectedStake = stakeAmount;
+            selectedGroupName = groupName;
+
+            const username = localStorage.getItem('emoji_current_user_secure');
+
+            if (!username) {
+                alert("Please log in first!");
+                return;
+            }
+
+            let userObj = getCurrentUserObj();
+            
+            if (userObj.balance < stakeAmount) {
+                alert(`Insufficient wallet balance! You need at least ₦${stakeAmount.toLocaleString()} to participate in the ${groupName}.`);
+                return;
+            }
+
+            // Deduct stake and update local user storage immediately
+            userObj.balance -= stakeAmount;
+            addTransaction(userObj, 'STAKE', stakeAmount, `Joined ${groupName} queue`);
+            saveUserData(userObj);
+
+            // Switch to the game screen immediately so the player sees the searching UI
+            switchScreen('game-screen');
+            document.getElementById('display-user').innerText = username;
+            document.getElementById('active-group-title').innerText = groupName;
+            document.getElementById('current-stake-display').innerText = stakeAmount.toLocaleString();
+            updateWalletDisplay();
+            
+            document.getElementById('message').innerText = "⏳ Looking for an opponent... Please wait!";
+            document.getElementById('turn-indicator').innerText = "Searching queue...";
+
+            // Initialize disabled grid boxes while searching
+            const gridEl = document.getElementById('game-grid');
+            gridEl.innerHTML = '';
+            for (let i = 0; i < 40; i++) {
+                const btn = document.createElement('button');
+                btn.classList.add('box');
+                btn.innerText = '📦';
+                btn.disabled = true;
+                gridEl.appendChild(btn);
+            }
+
+            gameActive = false; // Ensure gameActive is false while searching
+
+            // Explicitly emit socket join event
+            socket.emit('join_queue', {
+                username: username,
+                stake: stakeAmount
+            });
+        }
+
+        socket.on('match_found', (data) => {
+            console.log("Match found!", data);
+            
+            currentRoomId = data.roomId;
+            const currentUsername = localStorage.getItem('emoji_current_user_secure');
+            roomPlayers = data.players; 
+            const opponentName = roomPlayers.find(p => p !== currentUsername) || 'Opponent';
+            
+            currentTurnPlayer = roomPlayers[0];
+            isMyTurn = (currentTurnPlayer === currentUsername);
+
+            document.getElementById('message').innerText = `🎉 Match found against ${opponentName}! Game starting...`;
+            
+            currentTreasureEmoji = data.targetEmoji;
+            treasureIndex = data.winningIndex;
+            document.getElementById('current-target-emoji').innerText = currentTreasureEmoji;
+
+            gameActive = true;
+            matchTimeLeft = 60; // 1 minute total match time
+            turnTimeLeft = 6;   // 6 seconds per turn
+            
+            document.getElementById('timer').innerText = matchTimeLeft + 's';
+            updateTurnDisplay();
+            
+            const boxes = document.querySelectorAll('.box');
+            boxes.forEach((box, idx) => {
+                box.innerText = '📦';
+                box.classList.remove('revealed');
+                box.disabled = !isMyTurn;
+                box.onclick = () => {
+                    if (isMyTurn && gameActive) {
+                        selectBox(idx, box);
+                    }
+                };
+            });
+
+            clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                if (!gameActive) return;
+
+                matchTimeLeft--;
+                turnTimeLeft--;
+
+                if (matchTimeLeft <= 0) {
+                    matchTimeLeft = 0;
+                    gameActive = false;
+                    clearInterval(timerInterval);
+                    return;
+                }
+
+                document.getElementById('timer').innerText = matchTimeLeft + 's';
+                updateTurnDisplay();
+
+                if (turnTimeLeft <= 0 && gameActive) {
+                    passTurnToOpponent();
+                }
+            }, 1000);
+        });
+
+        function updateTurnDisplay() {
+            const turnEl = document.getElementById('turn-indicator');
+            if (!gameActive) return;
+
+            if (isMyTurn) {
+                turnEl.innerHTML = `👉 <strong style="color: #10b981;">YOUR TURN!</strong> (${turnTimeLeft}s left)`;
+                turnEl.style.borderColor = '#10b981';
+            } else {
+                turnEl.innerHTML = `⏳ <strong style="color: #f43f5e;">OPPONENT'S TURN</strong> (${turnTimeLeft}s left)`;
+                turnEl.style.borderColor = '#f43f5e';
+            }
+        }
+
+        function passTurnToOpponent() {
+            if (!gameActive) return;
+            const currentUsername = localStorage.getItem('emoji_current_user_secure');
+            currentTurnPlayer = roomPlayers.find(p => p !== currentTurnPlayer);
+            isMyTurn = (currentTurnPlayer === currentUsername);
+            turnTimeLeft = 6; 
+
+            updateTurnDisplay();
+            const boxes = document.querySelectorAll('.box');
+            boxes.forEach((box, idx) => {
+                if (!box.classList.contains('revealed')) {
+                    box.disabled = !isMyTurn;
+                }
+            });
+
+            document.getElementById('message').innerText = isMyTurn ? "⏱️ Opponent timed out! It's your turn now!" : "⏱️ Your turn expired! Waiting for opponent...";
+        }
+
+        socket.on('opponent_played', (data) => {
+            if (!gameActive) return;
+            const boxes = document.querySelectorAll('.box');
+            const box = boxes[data.index];
+            if (box && !box.classList.contains('revealed')) {
+                box.classList.add('revealed');
+                box.innerText = data.decoyEmoji;
+                box.disabled = true;
+            }
+            const currentUsername = localStorage.getItem('emoji_current_user_secure');
+            currentTurnPlayer = currentUsername;
+            isMyTurn = true;
+            turnTimeLeft = 6;
+            updateTurnDisplay();
+            boxes.forEach((b, idx) => {
+                if (!b.classList.contains('revealed')) {
+                    b.disabled = false;
+                }
+            });
+            document.getElementById('message').innerText = "Opponent picked wrong! Your turn to choose!";
+        });
+
+        socket.on('game_over', (data) => {
+            if (gameActive) {
+                gameActive = false;
+                clearInterval(timerInterval);
+                
+                const boxes = document.querySelectorAll('.box');
+                boxes.forEach((box, idx) => {
+                    box.disabled = true;
+                    if (idx === treasureIndex) {
+                        box.innerText = currentTreasureEmoji;
+                        box.classList.add('revealed');
+                    }
+                });
+
+                // Deduct stake from the loser's account upon game over
+                let userObj = getCurrentUserObj();
+                addTransaction(userObj, 'LOSS', selectedStake, `Lost match in ${selectedGroupName}`);
+                saveUserData(userObj);
+
+                updateWalletDisplay();
+                document.getElementById('message').innerHTML = `❌ Game Over! ${data.winner} found the treasure first. ₦${selectedStake.toLocaleString()} stake deducted.`;
+                document.getElementById('turn-indicator').innerText = "Opponent Won!";
+                selectedStake = 0;
+            }
+        });
+
+        socket.on('no_winner_refund', (data) => {
+            gameActive = false;
+            clearInterval(timerInterval);
+            selectedStake = 0;
+            
+            const boxes = document.querySelectorAll('.box');
+            boxes.forEach((box, idx) => {
+                box.disabled = true;
+                if (idx === treasureIndex) {
+                    box.innerText = currentTreasureEmoji;
+                    box.classList.add('revealed');
+                }
+            });
+
+            let userObj = getCurrentUserObj();
+            let refundAmount = data ? data.stake : selectedStake;
+            
+            userObj.balance += refundAmount;
+            addTransaction(userObj, 'REFUND', refundAmount, `Full stake refund (${selectedGroupName})`);
+            saveUserData(userObj);
+
+            updateWalletDisplay();
+            
+            // Force lock the turn indicator display and message
+            const turnEl = document.getElementById('turn-indicator');
+            turnEl.innerHTML = `<strong style="color: #f43f5e;">GAME OVER - NO WINNER</strong>`;
+            turnEl.style.borderColor = '#f43f5e';
+
+            document.getElementById('message').innerHTML = `❌ Game Over! Time expired. Full stake refunded: ₦${refundAmount.toLocaleString()}.`;
+        });
+    </script>
+
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            touch-action: manipulation;
+        }
+        .container {
+            max-width: 450px;
+            width: 100%;
+            background: #1e293b;
+            padding: 20px;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+            text-align: center;
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+        }
+        h1 {
+            font-size: 1.3rem;
+            margin-bottom: 5px;
+            color: #38bdf8;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .app-logo {
+            font-size: 1.6rem;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+        }
+        .subtitle {
+            font-size: 0.85rem;
+            color: #94a3b8;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 12px;
+            text-align: left;
+        }
+        label {
+            display: block;
+            font-size: 0.8rem;
+            color: #94a3b8;
+            margin-bottom: 4px;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #334155;
+            background: #0f172a;
+            color: white;
+            font-size: 0.95rem;
+            box-sizing: border-box;
+        }
+        textarea { resize: vertical; height: 80px; }
+        .password-container {
+            position: relative;
+        }
+        .toggle-password {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: #38bdf8;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+        .password-checklist {
+            background: #0f172a;
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin-top: 6px;
+            font-size: 0.75rem;
+            text-align: left;
+            display: none;
+        }
+        .password-checklist.active {
+            display: block;
+        }
+        .requirement {
+            color: #f43f5e;
+            margin-bottom: 2px;
+        }
+        .requirement.valid {
+            color: #10b981;
+        }
+        .screen-section {
+            display: none;
+        }
+        .screen-section.active {
+            display: block;
+        }
+        .btn {
+            background: #0284c7;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            font-size: 1rem;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 100%;
+            transition: background 0.2s;
+            margin-top: 10px;
+        }
+        .btn:hover { background: #0369a1; }
+        .btn-secondary { background: #475569; margin-top: 5px; }
+        .btn-secondary:hover { background: #64748b; }
+        .btn-success { background: #10b981; }
+        .btn-success:hover { background: #059669; }
+        .error-msg { color: #f43f5e; font-size: 0.85rem; margin-top: 10px; }
+        .success-msg { color: #10b981; font-size: 0.85rem; margin-top: 10px; }
+        .otp-hint {
+            background: #334155;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            color: #38bdf8;
+            margin-bottom: 15px;
+        }
+        .group-card {
+            background: #334155;
+            padding: 12px 15px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            text-align: left;
+        }
+        .group-info h3 { margin: 0 0 4px 0; font-size: 1rem; color: #38bdf8; }
+        .group-info p { margin: 0; font-size: 0.75rem; color: #94a3b8; }
+        .group-btn {
+            background: #10b981;
+            color: white;
+            border: none;
+            padding: 8px 14px;
+            font-size: 0.85rem;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .group-btn:hover { background: #059669; }
+        .wallet-card {
+            background: #334155;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        .wallet-actions { display: flex; gap: 10px; margin-bottom: 15px; }
+        .wallet-tab {
+            flex: 1; padding: 8px; background: #334155; border: none; color: #94a3b8; font-weight: bold; border-radius: 6px; cursor: pointer;
+        }
+        .wallet-tab.active { background: #0284c7; color: white; }
+        .wallet-subform { display: none; text-align: left; }
+        .wallet-subform.active { display: block; }
+        .leaderboard-list {
+            background: #334155; border-radius: 10px; padding: 10px; margin-bottom: 15px; text-align: left; max-height: 250px; overflow-y: auto;
+        }
+        .leaderboard-item {
+            display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-bottom: 1px solid #475569; font-size: 0.85rem;
+        }
+        .leaderboard-item:last-child { border-bottom: none; }
+        .rank-1 { color: #facc15; font-weight: bold; }
+        .rank-2 { color: #e2e8f0; font-weight: bold; }
+        .rank-3 { color: #fb923c; font-weight: bold; }
+        .game-header {
+            display: flex; justify-content: space-between; align-items: center; background: #334155; padding: 10px 15px; border-radius: 8px; margin-bottom: 10px; font-weight: bold;
+        }
+        .turn-indicator-box {
+            background: #0f172a; padding: 8px 12px; border-radius: 8px; border: 2px solid #334155; margin-bottom: 15px; font-size: 0.9rem; text-align: center;
+        }
+        .target-display {
+            background: #0f172a; padding: 4px 10px; border-radius: 6px; border: 1px solid #38bdf8; display: inline-flex; align-items: center; gap: 5px;
+        }
+        .timer { color: #f43f5e; font-size: 1.2rem; }
+        .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 20px; }
+        .box {
+            aspect-ratio: 1; background: #475569; border: none; border-radius: 6px; font-size: 1.4rem; cursor: pointer; display: flex; align-items: center; justify-content: center; user-select: none;
+        }
+        .box:hover:not(:disabled) { background: #64748b; }
+        .box.revealed { background: #0f172a; cursor: default; }
+        .user-panel {
+            display: flex; justify-content: space-between; align-items: center; background: #0f172a; padding: 10px 15px; border-radius: 8px; margin-bottom: 15px; font-size: 0.9rem; position: relative;
+        }
+        .logout-btn { background: transparent; border: none; color: #f43f5e; cursor: pointer; font-size: 0.85rem; font-weight: bold; }
+        
+        /* HAMBURGER MENU STYLES */
+        .menu-btn {
+            background: #334155; color: white; border: none; padding: 6px 10px; font-size: 1.1rem; border-radius: 6px; cursor: pointer; font-weight: bold;
+        }
+        .menu-btn:hover { background: #475569; }
+        .dropdown-menu {
+            display: none; position: absolute; right: 15px; top: 55px; background: #1e293b; border: 1px solid #334155; border-radius: 8px; width: 180px; box-shadow: 0 10px 20px rgba(0,0,0,0.4); z-index: 100; text-align: left; overflow: hidden;
+        }
+        .dropdown-menu.active { display: block; }
+        .dropdown-item {
+            padding: 10px 14px; font-size: 0.85rem; color: #f8fafc; border-bottom: 1px solid #334155; cursor: pointer; display: block; background: none; width: 100%; text-align: left; border: none;
+        }
+        .dropdown-item:hover { background: #334155; color: #38bdf8; }
+        .dropdown-item:last-child { border-bottom: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- AUTHENTICATION SCREEN -->
+    <div id="auth-screen" class="screen-section active">
+        <h1><span class="app-logo">😁</span> Emoji Treasure Hunt</h1>
+        <p class="subtitle" id="auth-subtitle">Login to your account to play</p>
+        
+        <div id="main-auth-form">
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" id="username-input" placeholder="Choose a username">
+            </div>
+
+            <div class="form-group">
+                <label>Password</label>
+                <div class="password-container">
+                    <input type="password" id="password-input" placeholder="Enter password" oninput="checkPasswordStrength(this.value)">
+                    <button type="button" class="toggle-password" onclick="togglePasswordVisibility('password-input')">Show</button>
+                </div>
+                <div id="password-checklist" class="password-checklist">
+                    <div id="req-length" class="requirement">❌ At least 8 characters</div>
+                    <div id="req-upper" class="requirement">❌ At least one uppercase letter (A-Z)</div>
+                    <div id="req-lower" class="requirement">❌ At least one lowercase letter (a-z)</div>
+                    <div id="req-number" class="requirement">❌ At least one number (0-9)</div>
+                    <div id="req-special" class="requirement">❌ At least one special character (!@#$%^&*)</div>
+                </div>
+            </div>
+
+            <div id="register-fields" class="register-fields" style="display:none;">
+                <div class="form-group">
+                    <label>Full Name</label>
+                    <input type="text" id="fullname-input" placeholder="e.g. John Doe">
+                </div>
+                <div class="form-group">
+                    <label>Email or Phone Number</label>
+                    <input type="text" id="contact-input" placeholder="name@example.com or phone">
+                </div>
+                <div class="form-group">
+                    <label>Country</label>
+                    <select id="country-input">
+                        <option value="Nigeria" selected>🇳🇬 Nigeria</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Date of Birth</label>
+                    <input type="date" id="dob-input">
+                </div>
+                <div class="form-group">
+                    <label>Gender</label>
+                    <select id="gender-input">
+                        <option value="">Select gender</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div id="otp-fields" class="otp-fields" style="display:none;">
+            <div class="otp-hint">
+                📱 Verification Code Sent! (Mock Code: <strong id="mock-code-display">1234</strong>)
+            </div>
+            <div class="form-group">
+                <label>Enter 4-Digit OTP Code</label>
+                <input type="text" id="otp-input" placeholder="Enter code" maxlength="4">
+            </div>
+            <button class="btn" onclick="verifyOTP()">Verify & Complete Registration</button>
+            <button class="btn btn-secondary" onclick="cancelOTP()">Back</button>
+        </div>
+
+        <div id="forgot-password-form" style="display:none;">
+            <div class="form-group">
+                <label>Enter Registered Username</label>
+                <input type="text" id="forgot-username" placeholder="Your username">
+            </div>
+            <div class="form-group">
+                <label>Enter Email or Phone</label>
+                <input type="text" id="forgot-contact" placeholder="Registered email or phone">
+            </div>
+            <div id="forgot-otp-group" style="display:none;">
+                <div class="otp-hint">Mock Recovery OTP: <strong id="forgot-mock-code">5678</strong></div>
+                <div class="form-group">
+                    <label>Enter 4-Digit Code</label>
+                    <input type="text" id="forgot-otp-input" placeholder="4-digit code" maxlength="4">
+                </div>
+                <div class="form-group">
+                    <label>New Password</label>
+                    <div class="password-container">
+                        <input type="password" id="forgot-new-password" placeholder="New secure password" oninput="checkPasswordStrength(this.value, 'forgot-checklist')">
+                        <button type="button" class="toggle-password" onclick="togglePasswordVisibility('forgot-new-password')">Show</button>
+                    </div>
+                    <div id="forgot-checklist" class="password-checklist active">
+                        <div id="freq-length" class="requirement">❌ At least 8 characters</div>
+                        <div id="freq-upper" class="requirement">❌ At least one uppercase letter (A-Z)</div>
+                        <div id="freq-lower" class="requirement">❌ At least one lowercase letter (a-z)</div>
+                        <div id="freq-number" class="requirement">❌ At least one number (0-9)</div>
+                        <div id="freq-special" class="requirement">❌ At least one special character (!@#$%^&*)</div>
+                    </div>
+                </div>
+                <button class="btn btn-success" onclick="executePasswordReset()">Reset Password</button>
+            </div>
+            <button class="btn" id="forgot-send-btn" onclick="sendPasswordRecoveryOTP()">Send Recovery Code</button>
+            <button class="btn btn-secondary" onclick="cancelForgotPassword()">Back to Login</button>
+        </div>
+        
+        <div id="auth-action-container">
+            <button class="btn" id="auth-action-btn" onclick="handleAuth()">Log In</button>
+            <button class="link-btn" id="forgot-link-btn" onclick="showForgotPassword()">Forgot Password?</button>
+            <button class="btn btn-secondary" id="auth-toggle-btn" onclick="toggleAuthMode()">Need an account? Register</button>
+        </div>
+        
+        <div id="auth-msg" class="error-msg"></div>
+    </div>
+
+    <!-- MAIN DASHBOARD (LOBBY) SCREEN WITH 3-LINE HAMBURGER MENU -->
+    <div id="lobby-screen" class="screen-section">
+        <h1><span class="app-logo">😁</span> Emoji Dashboard</h1>
+        
+        <div class="user-panel">
+            <span>👤 <strong id="lobby-display-user"></strong></span>
+            <div style="display: flex; gap: 6px; align-items: center;">
+                <button class="menu-btn" onclick="toggleHamburgerMenu()">☰</button>
+                <button class="logout-btn" onclick="logout()">Log Out</button>
+            </div>
+            
+            <!-- Dropdown Menu (3-Lines) -->
+            <div id="hamburger-dropdown" class="dropdown-menu">
+                <button class="dropdown-item" onclick="closeMenu(); showLeaderboard()">🏆 Top Hunters</button>
+                <button class="dropdown-item" onclick="closeMenu(); showTransactionHistory()">📜 History</button>
+                <button class="dropdown-item" onclick="closeMenu(); showChangePasswordScreen()">🔐 Password</button>
+                <button class="dropdown-item" onclick="closeMenu(); showSupportModal()">💬 Support</button>
+                <button class="dropdown-item" id="admin-menu-item" onclick="closeMenu(); showAdminDashboard()" style="color: #10b981; display: none;">📊 Admin Hub</button>
+            </div>
+        </div>
+        
+        <div class="wallet-card">
+            <div class="subtitle" style="margin-bottom: 5px;">Wallet Balance</div>
+            <div style="font-size: 1.8rem; color: #38bdf8; font-weight: bold; margin-bottom: 10px;" id="lobby-wallet-balance">₦0.00</div>
+            <button class="btn btn-success" onclick="showWalletCashier()" style="margin-top: 0;">💳 Deposit / Withdraw (₦)</button>
+        </div>
+
+        <p style="font-size: 0.85rem; color: #94a3b8; text-align: left; margin-bottom: 10px;">Select a stake tier to join a live room:</p>
+
+        <div class="group-card">
+            <div class="group-info">
+                <h3>🎮 Micro Lounge</h3>
+                <p>Stake: ₦100 | 2 Players | Payout: ₦190</p>
+                <p style="color: #10b981; margin-top: 2px;">🟢 Turn-Based Ready</p>
+            </div>
+            <button class="group-btn" onclick="joinGameQueue(100, 'Micro Lounge')">Play</button>
+        </div>
+
+        <div class="group-card">
+            <div class="group-info">
+                <h3>🥉 Bronze Lounge</h3>
+                <p>Stake: ₦500 | 2 Players | Payout: ₦950</p>
+                <p style="color: #10b981; margin-top: 2px;">🟢 Turn-Based Ready</p>
+            </div>
+            <button class="group-btn" onclick="joinGameQueue(500, 'Bronze Lounge')">Play</button>
+        </div>
+
+        <div class="group-card">
+            <div class="group-info">
+                <h3>🥈 Silver Arena</h3>
+                <p>Stake: ₦1,000 | 2 Players | Payout: ₦1,900</p>
+                <p style="color: #10b981; margin-top: 2px;">🟢 Turn-Based Ready</p>
+            </div>
+            <button class="group-btn" onclick="joinGameQueue(1000, 'Silver Arena')">Play</button>
+        </div>
+
+        <div class="group-card">
+            <div class="group-info">
+                <h3>🥇 Gold Chamber</h3>
+                <p>Stake: ₦5,000 | 2 Players | Payout: ₦9,500</p>
+                <p style="color: #10b981; margin-top: 2px;">🟢 Turn-Based Ready</p>
+            </div>
+            <button class="group-btn" onclick="joinGameQueue(5000, 'Gold Chamber')">Play</button>
+        </div>
+    </div>
+
+    <!-- CUSTOMER SUPPORT MODAL SCREEN -->
+    <div id="support-screen" class="screen-section">
+        <h1>💬 Customer Support</h1>
+        <div class="subtitle">We are here to help you resolve any issues</div>
+        
+        <div class="wallet-subform active" style="text-align: left;">
+            <div class="form-group">
+                <label>Issue Category</label>
+                <select id="support-category">
+                    <option value="Wallet / Deposit / Withdrawal">Wallet / Deposit / Withdrawal</option>
+                    <option value="Game Glitch / Disconnect">Game Glitch / Disconnect</option>
+                    <option value="Account Security / Password">Account Security / Password</option>
+                    <option value="General Inquiry">General Inquiry</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Describe Your Issue</label>
+                <textarea id="support-message" placeholder="Type your message or complaint here..."></textarea>
+            </div>
+            <button class="btn btn-success" onclick="submitSupportTicket()">Submit Support Ticket</button>
+            <div id="support-msg"></div>
+        </div>
+
+        <button class="btn btn-secondary" onclick="returnToLobby()" style="margin-top: 20px;">Back to Dashboard</button>
+    </div>
+
+    <!-- ADMIN DASHBOARD SCREEN -->
+    <div id="admin-dashboard-screen" class="screen-section">
+        <h1>📊 Admin House Revenue</h1>
+        <div class="subtitle">Platform Profit, Income Logs & Withdrawal History</div>
+        
+        <div class="wallet-card">
+            <div class="subtitle" style="margin-bottom: 5px;">Total House Revenue</div>
+            <div style="font-size: 1.8rem; color: #10b981; font-weight: bold;" id="admin-house-balance">₦0.00</div>
+        </div>
+
+        <div class="wallet-subform active" style="text-align: left;">
+            <div class="form-group">
+                <label>Withdrawal Amount (₦ NGN)</label>
+                <input type="number" id="admin-withdraw-amount" placeholder="e.g. 5000" min="500">
+            </div>
+            <div class="form-group">
+                <label>Select Bank</label>
+                <select id="admin-bank-name" onchange="checkAdminAccountForm()">
+                    <option value="">Select bank</option>
+                    <option value="Access Bank">Access Bank</option>
+                    <option value="First Bank">First Bank</option>
+                    <option value="GTBank">Guaranty Trust Bank (GTB)</option>
+                    <option value="UBA">United Bank for Africa (UBA)</option>
+                    <option value="Zenith Bank">Zenith Bank</option>
+                    <option value="Opay">Opay / Moniepoint</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Admin Account Number</label>
+                <input type="text" id="admin-account-number" placeholder="10-digit account number" maxlength="10" oninput="verifyAdminAccount(this.value)">
+            </div>
+            
+            <div id="account-verification-box" style="display: none; background: #0f172a; padding: 10px; border-radius: 8px; margin-bottom: 12px; border: 1px solid #10b981;">
+                <span style="font-size: 0.75rem; color: #94a3b8; display: block;">Verified Account Name:</span>
+                <strong id="verified-account-name" style="color: #10b981; font-size: 0.95rem;"></strong>
+            </div>
+
+            <button class="btn btn-success" id="admin-withdraw-btn" onclick="processAdminWithdrawal()" disabled style="opacity: 0.5; cursor: not-allowed;">Withdraw Profits to Bank</button>
+            <div id="admin-withdraw-msg"></div>
+        </div>
+
+        <div style="margin-top: 15px; text-align: left;">
+            <h3 style="font-size: 0.95rem; color: #38bdf8; margin-bottom: 6px;">📈 Income Commission History</h3>
+            <div class="leaderboard-list" id="admin-income-history-container" style="max-height: 110px;"></div>
+        </div>
+
+        <div style="margin-top: 15px; text-align: left;">
+            <h3 style="font-size: 0.95rem; color: #f43f5e; margin-bottom: 6px;">📜 Admin Withdrawal History</h3>
+            <div class="leaderboard-list" id="admin-withdrawal-history-container" style="max-height: 110px;"></div>
+        </div>
+
+        <div style="margin-top: 15px; text-align: left;">
+            <h3 style="font-size: 0.95rem; color: #38bdf8; margin-bottom: 6px;">📨 Customer Support Inbox</h3>
+            <div class="leaderboard-list" id="admin-support-container" style="max-height: 130px;"></div>
+        </div>
+
+        <button class="btn btn-secondary" onclick="returnToLobby()" style="margin-top: 15px;">Back to Dashboard</button>
+    </div>
+
+    <!-- CHANGE PASSWORD SCREEN -->
+    <div id="change-password-screen" class="screen-section">
+        <h1>🔐 Change Password</h1>
+        <div class="subtitle">Secure your account</div>
+        <div class="form-group">
+            <label>Current Password</label>
+            <div class="password-container">
+                <input type="password" id="old-password" placeholder="Enter current password">
+                <button type="button" class="toggle-password" onclick="togglePasswordVisibility('old-password')">Show</button>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>New Password</label>
+            <div class="password-container">
+                <input type="password" id="new-password" placeholder="Enter new password" oninput="checkPasswordStrength(this.value, 'change-checklist')">
+                <button type="button" class="toggle-password" onclick="togglePasswordVisibility('new-password')">Show</button>
+            </div>
+            <div id="change-checklist" class="password-checklist active">
+                <div id="creq-length" class="requirement">❌ At least 8 characters</div>
+                <div id="creq-upper" class="requirement">❌ At least one uppercase letter (A-Z)</div>
+                <div id="creq-lower" class="requirement">❌ At least one lowercase letter (a-z)</div>
+                <div id="creq-number" class="requirement">❌ At least one number (0-9)</div>
+                <div id="creq-special" class="requirement">❌ At least one special character (!@#$%^&*)</div>
+            </div>
+        </div>
+        <button class="btn btn-success" onclick="executeChangePassword()">Update Password</button>
+        <div id="change-pwd-msg"></div>
+        <button class="btn btn-secondary" onclick="returnToLobby()" style="margin-top: 15px;">Back to Dashboard</button>
+    </div>
+
+    <!-- WALLET / CASHIER SCREEN -->
+    <div id="wallet-screen" class="screen-section">
+        <h1>💳 Cashier & Wallet</h1>
+        <div class="wallet-card">
+            <div class="subtitle" style="margin-bottom: 5px;">Available Balance</div>
+            <div style="font-size: 1.8rem; color: #38bdf8; font-weight: bold;" id="cashier-wallet-balance">₦0.00</div>
+        </div>
+
+        <div class="wallet-actions">
+            <button class="wallet-tab active" id="tab-deposit-btn" onclick="switchWalletTab('deposit')">Deposit</button>
+            <button class="wallet-tab" id="tab-withdraw-btn" onclick="switchWalletTab('withdraw')">Withdrawal</button>
+        </div>
+
+        <div id="deposit-form" class="wallet-subform active">
+            <div class="form-group">
+                <label>Deposit Amount (₦ NGN)</label>
+                <input type="number" id="deposit-amount" placeholder="e.g. 500" min="100">
+            </div>
+            <div class="form-group">
+                <label>Payment Channel</label>
+                <select id="deposit-method">
+                    <option value="Card">Debit Card</option>
+                    <option value="Transfer">Instant Bank Transfer</option>
+                    <option value="USSD">USSD Code</option>
+                </select>
+            </div>
+            <button class="btn btn-success" onclick="processDeposit()">Pay Now</button>
+            <div id="deposit-msg"></div>
+        </div>
+
+        <div id="withdraw-form" class="wallet-subform">
+            <div class="form-group">
+                <label>Withdrawal Amount (₦ NGN)</label>
+                <input type="number" id="withdraw-amount" placeholder="e.g. 2000" min="500">
+            </div>
+            <div class="form-group">
+                <label>Select Bank</label>
+                <select id="bank-name" onchange="checkPlayerAccountForm()">
+                    <option value="">Select bank</option>
+                    <option value="Access Bank">Access Bank</option>
+                    <option value="First Bank">First Bank</option>
+                    <option value="GTBank">Guaranty Trust Bank (GTB)</option>
+                    <option value="UBA">United Bank for Africa (UBA)</option>
+                    <option value="Zenith Bank">Zenith Bank</option>
+                    <option value="Opay">Opay / Moniepoint</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Account Number</label>
+                <input type="text" id="account-number" placeholder="10-digit account number" maxlength="10" oninput="verifyPlayerAccount(this.value)">
+            </div>
+
+            <div id="player-verification-box" style="display: none; background: #0f172a; padding: 10px; border-radius: 8px; margin-bottom: 12px; border: 1px solid #10b981;">
+                <span style="font-size: 0.75rem; color: #94a3b8; display: block;">Verified Account Name:</span>
+                <strong id="player-verified-name" style="color: #10b981; font-size: 0.95rem;"></strong>
+            </div>
+
+            <button class="btn" id="player-withdraw-btn" onclick="processWithdrawal()" disabled style="opacity: 0.5; cursor: not-allowed;">Withdraw to Bank</button>
+            <div id="withdraw-msg"></div>
+        </div>
+
+        <button class="btn btn-secondary" onclick="returnToLobbyFromWallet()" style="margin-top: 20px;">Back to Dashboard</button>
+    </div>
+
+    <!-- LEADERBOARD SCREEN -->
+    <div id="leaderboard-screen" class="screen-section">
+        <h1>🏆 Top Emoji Hunters</h1>
+        <div class="subtitle">Ranked by Total Wins & Earnings</div>
+        
+        <div class="leaderboard-list" id="leaderboard-container"></div>
+
+        <button class="btn" onclick="returnToLobbyFromLeaderboard()">Back to Dashboard</button>
+    </div>
+
+    <!-- TRANSACTION HISTORY SCREEN -->
+    <div id="transaction-history-screen" class="screen-section">
+        <h1>📜 Transaction History</h1>
+        <div class="subtitle">Your recent financial logs & game activities</div>
+        
+        <div class="leaderboard-list" id="transaction-container" style="max-height: 320px;"></div>
+
+        <button class="btn" onclick="returnToLobbyFromTransactions()">Back to Dashboard</button>
+    </div>
+
+    <!-- GAME DASHBOARD SCREEN -->
+    <div id="game-screen" class="screen-section">
+        <h1 id="active-group-title">Emoji Treasure Hunt</h1>
+        <div class="user-panel">
+            <span>👤 <strong id="display-user"></strong></span>
+            <button class="logout-btn" id="game-logout-btn" onclick="returnToLobby()">Exit</button>
+        </div>
+        
+        <div class="subtitle" style="margin-bottom: 8px;">
+            Wallet Balance: <span id="wallet-balance" style="color: #38bdf8; font-weight: bold;">₦0.00</span> | Stake: ₦<span id="current-stake-display">100</span>
+        </div>
+        
+        <div class="game-header">
+            <div class="target-display">
+                <span>Target:</span> <span id="current-target-emoji" style="font-size: 1.3rem;">💎</span>
+            </div>
+            <div>Match Time: <span class="timer" id="timer">60s</span></div>
+        </div>
+
+        <div class="turn-indicator-box" id="turn-indicator">
+            Waiting for match...
+        </div>
+
+        <div class="grid" id="game-grid"></div>
+
+        <button class="btn btn-secondary" id="back-to-lobby-btn" onclick="returnToLobby()" style="margin-top: 8px;">Back to Dashboard</button>
+        <div id="message" style="margin-top: 15px; font-size: 0.95rem; min-height: 24px;"></div>
+    </div>
+</div>
+
+<script>
+    const ADMIN_USERNAME = "onyeje chukwuebuka peter admin";
+
+    let isRegistering = false;
+    let currentUser = null;
+    let selectedStake = 0;
+    let selectedGroupName = "Micro Lounge";
+    let treasureIndex = -1;
+    let currentTreasureEmoji = '💎';
+    let gameActive = false;
+    let matchTimeLeft = 60;
+    let turnTimeLeft = 6;
+    let timerInterval = null;
+    let currentRoomId = null;
+    let roomPlayers = [];
+    let currentTurnPlayer = null;
+    let isMyTurn = false;
+
+    const decoyPool = [
+        '😂', '😭', '🤯', '😡', '😱', '🤡', '🤠', '🥳', '😎', '🥶', '🥴', '🥺',
+        '💣', '🍌', '👻', '💀', '🐸', '💩', '🧊', '🌵', '🍅', '🧩', '🪵', '🌀'
+    ];
+
+    let pendingUserData = null;
+    let generatedOTP = "";
+    let forgotGeneratedOTP = "";
+
+    window.addEventListener('beforeunload', function (e) {
+        if (gameActive) {
+            e.preventDefault();
+            e.returnValue = '';
+        }
+    });
+
+    // Toggle 3-line hamburger menu
+    function toggleHamburgerMenu() {
+        const menu = document.getElementById('hamburger-dropdown');
+        menu.classList.toggle('active');
+    }
+
+    function closeMenu() {
+        document.getElementById('hamburger-dropdown').classList.remove('active');
+    }
+
+    // Close menu when clicking outside
+    window.onclick = function(event) {
+        if (!event.target.matches('.menu-btn')) {
+            const dropdown = document.getElementById('hamburger-dropdown');
+            if (dropdown && dropdown.classList.contains('active')) {
+                dropdown.classList.remove('active');
+            }
+        }
+    }
+
+    // Customer support navigation & submission
+    function showSupportModal() {
+        switchScreen('support-screen');
+        document.getElementById('support-message').value = '';
+        document.getElementById('support-msg').innerHTML = '';
+    }
+
+    function submitSupportTicket() {
+        const category = document.getElementById('support-category').value;
+        const message = document.getElementById('support-message').value.trim();
+        const msgEl = document.getElementById('support-msg');
+
+        if (!message) {
+            msgEl.className = "error-msg";
+            msgEl.innerText = "Please describe your issue before submitting.";
+            return;
+        }
+
+        socket.emit('submit_support_ticket', {
+            username: currentUser,
+            category: category,
+            message: message
+        }, (response) => {
+            if (response && response.success) {
+                msgEl.className = "success-msg";
+                msgEl.innerText = `✅ Ticket (${response.ticketId}) submitted successfully! Our support team will review it.`;
+                document.getElementById('support-message').value = '';
+            } else {
+                msgEl.className = "error-msg";
+                msgEl.innerText = "❌ Failed to submit ticket. Please try again.";
+            }
+        });
+    }
+
+    function addTransaction(userObj, type, amount, description) {
+        if (!userObj.transactions) {
+            userObj.transactions = [];
+        }
+        userObj.transactions.unshift({
+            date: new Date().toLocaleString(),
+            type: type,
+            amount: amount,
+            description: description
+        });
+        if (userObj.transactions.length > 50) {
+            userObj.transactions.pop();
+        }
+    }
+
+    function showTransactionHistory() {
+        switchScreen('transaction-history-screen');
+        
+        let users = JSON.parse(localStorage.getItem('emoji_users_secure') || '{}');
+        let userObj = users[currentUser] || {};
+        let transactions = userObj.transactions || [];
+        
+        const container = document.getElementById('transaction-container');
+        container.innerHTML = '';
+
+        if (transactions.length === 0) {
+            container.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 20px;">No transactions found yet. Play a game or fund your wallet to get started!</div>`;
+            return;
+        }
+
+        transactions.forEach(tx => {
+            let color = '#38bdf8';
+            let sign = '';
+            if (tx.type === 'DEPOSIT' || tx.type === 'WIN' || tx.type === 'REFUND') {
+                color = '#10b981';
+                sign = '+';
+            } else if (tx.type === 'STAKE' || tx.type === 'WITHDRAWAL' || tx.type === 'LOSS') {
+                color = '#f43f5e';
+                sign = '-';
+            }
+
+            const item = document.createElement('div');
+            item.classList.add('leaderboard-item');
+            item.innerHTML = `
+                <div>
+                    <strong style="color: ${color};">${tx.type}</strong><br>
+                    <span style="font-size: 0.75rem; color: #94a3b8;">${tx.description}</span><br>
+                    <span style="font-size: 0.7rem; color: #64748b;">${tx.date}</span>
+                </div>
+                <div style="text-align: right; color: ${color}; font-weight: bold;">
+                    ${sign}₦${Math.abs(tx.amount).toLocaleString()}
+                </div>
+            `;
+            container.appendChild(item);
+        });
+    }
+
+    function returnToLobbyFromTransactions() {
+        switchScreen('lobby-screen');
+        updateLobbyWallet();
+    }
+
+    // Admin Hub with Password Protection, Income History, Withdrawal History & Support Inbox
+    function showAdminDashboard() {
+        let adminPassword = prompt("🔐 Enter Admin Security Password:");
+        const SECURE_ADMIN_PASS = "OnyejeAdmin2026@"; 
+
+        if (adminPassword !== SECURE_ADMIN_PASS) {
+            alert("❌ Incorrect admin password! Access denied.");
+            return;
+        }
+
+        socket.emit('get_house_revenue', (response) => {
+            let totalRevenue = response && response.revenue ? response.revenue : 0;
+            let incomeLogs = response && response.incomeLogs ? response.incomeLogs : [];
+            let withdrawalLogs = response && response.withdrawalLogs ? response.withdrawalLogs : [];
+            
+            switchScreen('admin-dashboard-screen');
+            document.getElementById('admin-house-balance').innerText = `₦${totalRevenue.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
+            document.getElementById('admin-withdraw-msg').innerHTML = '';
+            document.getElementById('admin-account-number').value = '';
+            document.getElementById('admin-bank-name').value = '';
+            document.getElementById('account-verification-box').style.display = 'none';
+            document.getElementById('admin-withdraw-btn').disabled = true;
+            document.getElementById('admin-withdraw-btn').style.opacity = '0.5';
+            document.getElementById('admin-withdraw-btn').style.cursor = 'not-allowed';
+            
+            renderAdminIncomeHistory(incomeLogs);
+            renderAdminWithdrawalHistory(withdrawalLogs);
+            renderSupportTickets();
+        });
+    }
+
+    function renderAdminIncomeHistory(incomeLogs) {
+        const container = document.getElementById('admin-income-history-container');
+        container.innerHTML = '';
+
+        if (incomeLogs.length === 0) {
+            container.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 10px; font-size: 0.75rem;">No income commission recorded yet.</div>`;
+            return;
+        }
+
+        incomeLogs.forEach(log => {
+            const item = document.createElement('div');
+            item.classList.add('leaderboard-item');
+            item.innerHTML = `
+                <div>
+                    <strong style="color: #10b981;">${log.type}</strong><br>
+                    <span style="font-size: 0.7rem; color: #94a3b8;">${log.description}</span><br>
+                    <span style="font-size: 0.65rem; color: #64748b;">${log.date}</span>
+                </div>
+                <div style="text-align: right; color: #10b981; font-weight: bold;">
+                    +₦${log.amount.toLocaleString()}
+                </div>
+            `;
+            container.appendChild(item);
+        });
+    }
+
+    function renderAdminWithdrawalHistory(withdrawalLogs) {
+        const container = document.getElementById('admin-withdrawal-history-container');
+        container.innerHTML = '';
+
+        if (withdrawalLogs.length === 0) {
+            container.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 10px; font-size: 0.75rem;">No admin withdrawal history yet.</div>`;
+            return;
+        }
+
+        withdrawalLogs.forEach(log => {
+            const item = document.createElement('div');
+            item.classList.add('leaderboard-item');
+            item.innerHTML = `
+                <div>
+                    <strong style="color: #f43f5e;">WITHDRAWAL</strong><br>
+                    <span style="font-size: 0.7rem; color: #94a3b8;">To ${log.bankName} (${log.accountNumber})</span><br>
+                    <span style="font-size: 0.65rem; color: #64748b;">${log.date}</span>
+                </div>
+                <div style="text-align: right; color: #f43f5e; font-weight: bold;">
+                    -₦${log.amount.toLocaleString()}
+                </div>
+            `;
+            container.appendChild(item);
+        });
+    }
+
+    function renderSupportTickets() {
+        socket.emit('get_support_tickets', (response) => {
+            let tickets = response && response.tickets ? response.tickets : [];
+            const container = document.getElementById('admin-support-container');
+            container.innerHTML = '';
+
+            if (tickets.length === 0) {
+                container.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 10px; font-size: 0.75rem;">No support tickets received.</div>`;
+                return;
+            }
+
+            tickets.forEach(ticket => {
+                let statusColor = ticket.status === 'Resolved' ? '#10b981' : '#facc15';
+                const item = document.createElement('div');
+                item.classList.add('leaderboard-item');
+                item.innerHTML = `
+                    <div>
+                        <strong style="color: #38bdf8;">[${ticket.id}] ${ticket.category}</strong> <span style="font-size: 0.7rem; color: ${statusColor};">(${ticket.status})</span><br>
+                        <span style="font-size: 0.75rem; color: #f8fafc;">User: <strong>${ticket.username}</strong> - "${ticket.message}"</span><br>
+                        <span style="font-size: 0.65rem; color: #64748b;">${ticket.date}</span>
+                    </div>
+                    <div>
+                        ${ticket.status !== 'Resolved' ? `<button class="group-btn" style="padding: 4px 8px; font-size: 0.7rem;" onclick="resolveTicket('${ticket.id}')">Resolve</button>` : '<span style="color: #10b981; font-size: 0.75rem;">✔ Done</span>'}
+                    </div>
+                `;
+                container.appendChild(item);
+            });
+        });
+    }
+
+    function resolveTicket(ticketId) {
+        socket.emit('resolve_ticket', ticketId, (response) => {
+            if (response && response.success) {
+                renderSupportTickets();
+            }
+        });
+    }
+
+    function verifyAdminAccount(accountNum) {
+        const verifyBox = document.getElementById('account-verification-box');
+        const nameDisplay = document.getElementById('verified-account-name');
+        const withdrawBtn = document.getElementById('admin-withdraw-btn');
+        const bankName = document.getElementById('admin-bank-name').value;
+
+        if (accountNum.length === 10 && bankName !== "") {
+            setTimeout(() => {
+                verifyBox.style.display = 'block';
+                nameDisplay.innerText = "ONYEJE CHUKWUEBUKA PETER";
+                withdrawBtn.disabled = false;
+                withdrawBtn.style.opacity = '1';
+                withdrawBtn.style.cursor = 'pointer';
+            }, 300);
+        } else {
+            verifyBox.style.display = 'none';
+            nameDisplay.innerText = "";
+            withdrawBtn.disabled = true;
+            withdrawBtn.style.opacity = '0.5';
+            withdrawBtn.style.cursor = 'not-allowed';
+        }
+    }
+
+    function checkAdminAccountForm() {
+        const accountNum = document.getElementById('admin-account-number').value.trim();
+        if (accountNum.length === 10) {
+            verifyAdminAccount(accountNum);
+        }
+    }
+
+    function processAdminWithdrawal() {
+        const amount = parseFloat(document.getElementById('admin-withdraw-amount').value);
+        const bankName = document.getElementById('admin-bank-name').value;
+        const accountNum = document.getElementById('admin-account-number').value.trim();
+        const msgEl = document.getElementById('admin-withdraw-msg');
+
+        if (isNaN(amount) || amount <= 0) {
+            msgEl.className = "error-msg";
+            msgEl.innerText = "Please enter a valid withdrawal amount.";
+            return;
+        }
+
+        if (!bankName || accountNum.length < 10) {
+            msgEl.className = "error-msg";
+            msgEl.innerText = "Please select a bank and enter a valid 10-digit account number.";
+            return;
+        }
+
+        socket.emit('admin_withdraw', {
+            username: currentUser,
+            amount: amount,
+            bankName: bankName,
+            accountNumber: accountNum
+        }, (response) => {
+            if (response && response.success) {
+                msgEl.className = "success-msg";
+                msgEl.innerText = `✅ ${response.message}`;
+                document.getElementById('admin-house-balance').innerText = `₦${response.newRevenue.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
+                
+                document.getElementById('admin-withdraw-amount').value = '';
+                document.getElementById('admin-account-number').value = '';
+                document.getElementById('account-verification-box').style.display = 'none';
+                document.getElementById('admin-withdraw-btn').disabled = true;
+                document.getElementById('admin-withdraw-btn').style.opacity = '0.5';
+                
+                setTimeout(() => { showAdminDashboard(); }, 1500);
+            } else {
+                msgEl.className = "error-msg";
+                msgEl.innerText = `❌ ${response ? response.message : "Withdrawal failed."}`;
+            }
+        });
+    }
+
+    function verifyPlayerAccount(accountNum) {
+        const verifyBox = document.getElementById('player-verification-box');
+        const nameDisplay = document.getElementById('player-verified-name');
+        const withdrawBtn = document.getElementById('player-withdraw-btn');
+        const bankName = document.getElementById('bank-name').value;
+
+        if (accountNum.length === 10 && bankName !== "") {
+            setTimeout(() => {
+                verifyBox.style.display = 'block';
+                let activeUserObj = getCurrentUserObj();
+                let accountHolderName = activeUserObj.fullname ? activeUserObj.fullname.toUpperCase() : currentUser.toUpperCase();
+                nameDisplay.innerText = accountHolderName;
+                withdrawBtn.disabled = false;
+                withdrawBtn.style.opacity = '1';
+                withdrawBtn.style.cursor = 'pointer';
+            }, 300);
+        } else {
+            verifyBox.style.display = 'none';
+            nameDisplay.innerText = "";
+            withdrawBtn.disabled = true;
+            withdrawBtn.style.opacity = '0.5';
+            withdrawBtn.style.cursor = 'not-allowed';
+        }
+    }
+
+    function checkPlayerAccountForm() {
+        const accountNum = document.getElementById('account-number').value.trim();
+        if (accountNum.length === 10) {
+            verifyPlayerAccount(accountNum);
+        }
+    }
+
+    function togglePasswordVisibility(fieldId) {
+        const passwordInput = document.getElementById(fieldId);
+        const toggleBtn = passwordInput.nextElementSibling;
+        if (passwordInput.type === 'password') {
+            passwordInput.type = 'text';
+            toggleBtn.innerText = 'Hide';
+        } else {
+            passwordInput.type = 'password';
+            toggleBtn.innerText = 'Show';
+        }
+    }
+
+    function checkPasswordStrength(password, checklistId = 'password-checklist') {
+        const checklist = document.getElementById(checklistId);
+        if (checklistId === 'password-checklist' && !isRegistering) {
+            checklist.classList.remove('active');
+            return;
+        } else {
+            checklist.classList.add('active');
+        }
+
+        const prefix = checklistId === 'change-checklist' ? 'creq-' : (checklistId === 'forgot-checklist' ? 'freq-' : 'req-');
+
+        let validLen = password.length >= 8;
+        let validUpper = /[A-Z]/.test(password);
+        let validLower = /[a-z]/.test(password);
+        let validNum = /[0-9]/.test(password);
+        let validSpecial = /[!@#$%^&*]/.test(password);
+
+        const setReqState = (suffix, isValid, text) => {
+            let el = document.getElementById(prefix + suffix);
+            if(el) {
+                el.className = isValid ? "requirement valid" : "requirement";
+                el.innerText = (isValid ? "✔" : "❌") + " " + text;
+            }
+        };
+
+        setReqState('length', validLen, 'At least 8 characters');
+        setReqState('upper', validUpper, 'At least one uppercase letter (A-Z)');
+        setReqState('lower', validLower, 'At least one lowercase letter (a-z)');
+        setReqState('number', validNum, 'At least one number (0-9)');
+        setReqState('special', validSpecial, 'At least one special character (!@#$%^&*)');
+    }
+
+    function isPasswordStrong(password) {
+        return password.length >= 8 && /[A-Z]/.test(password) && /[a-z]/.test(password) && /[0-9]/.test(password) && /[!@#$%^&*]/.test(password);
+    }
+
+    function toggleAuthMode() {
+        isRegistering = !isRegistering;
+        const subtitle = document.getElementById('auth-subtitle');
+        const actionBtn = document.getElementById('auth-action-btn');
+        const toggleBtn = document.getElementById('auth-toggle-btn');
+        const registerFields = document.getElementById('register-fields');
+        const forgotLink = document.getElementById('forgot-link-btn');
+        
+        if (isRegistering) {
+            subtitle.innerText = "Create your profile (Starts at ₦0.00)";
+            actionBtn.innerText = "Continue to Verification";
+            toggleBtn.innerText = "Already have an account? Log In";
+            registerFields.style.display = 'block';
+            forgotLink.style.display = 'none';
+        } else {
+            subtitle.innerText = "Login to your account to play";
+            actionBtn.innerText = "Log In";
+            toggleBtn.innerText = "Need an account? Register";
+            registerFields.style.display = 'none';
+            forgotLink.style.display = 'inline-block';
+            document.getElementById('password-checklist').classList.remove('active');
+        }
+        document.getElementById('auth-msg').innerText = '';
+    }
+
+    function showForgotPassword() {
+        document.getElementById('main-auth-form').style.display = 'none';
+        document.getElementById('auth-action-container').style.display = 'none';
+        document.getElementById('forgot-password-form').style.display = 'block';
+        document.getElementById('auth-subtitle').innerText = "Account Password Recovery";
+        document.getElementById('auth-msg').innerText = '';
+    }
+
+    function cancelForgotPassword() {
+        document.getElementById('forgot-password-form').style.display = 'none';
+        document.getElementById('main-auth-form').style.display = 'block';
+        document.getElementById('auth-action-container').style.display = 'block';
+        document.getElementById('auth-subtitle').innerText = "Login to your account to play";
+        document.getElementById('forgot-otp-group').style.display = 'none';
+        document.getElementById('forgot-send-btn').style.display = 'block';
+    }
+
+    function sendPasswordRecoveryOTP() {
+        const username = document.getElementById('forgot-username').value.trim();
+        const contact = document.getElementById('forgot-contact').value.trim();
+        const msgEl = document.getElementById('auth-msg');
+
+        let users = JSON.parse(localStorage.getItem('emoji_users_secure') || '{}');
+        if (!users[username] || users[username].contact !== contact) {
+            msgEl.innerText = "Username or contact info does not match our records.";
+            return;
+        }
+
+        forgotGeneratedOTP = Math.floor(1000 + Math.random() * 9000).toString();
+        document.getElementById('forgot-mock-code').innerText = forgotGeneratedOTP;
+        document.getElementById('forgot-otp-group').style.display = 'block';
+        document.getElementById('forgot-send-btn').style.display = 'none';
+        msgEl.innerText = "";
+    }
+
+    function executePasswordReset() {
+        const username = document.getElementById('forgot-username').value.trim();
+        const enteredOTP = document.getElementById('forgot-otp-input').value.trim();
+        const newPassword = document.getElementById('forgot-new-password').value.trim();
+        const msgEl = document.getElementById('auth-msg');
+
+        if (enteredOTP !== forgotGeneratedOTP) {
+            msgEl.innerText = "Incorrect recovery code.";
+            return;
+        }
+
+        if (!isPasswordStrong(newPassword)) {
+            msgEl.innerText = "New password does not meet security requirements.";
+            return;
+        }
+
+        let users = JSON.parse(localStorage.getItem('emoji_users_secure') || '{}');
+        users[username].password = newPassword;
+        localStorage.setItem('emoji_users_secure', JSON.stringify(users));
+
+        msgEl.style.color = "#10b981";
+        msgEl.innerText = "Password reset successful! Please log in.";
+        setTimeout(() => {
+            cancelForgotPassword();
+            msgEl.style.color = "#f43f5e";
+            msgEl.innerText = "";
+        }, 1500);
+    }
+
+    function handleAuth() {
+        const username = document.getElementById('username-input').value.trim();
+        const password = document.getElementById('password-input').value.trim();
+        const msgEl = document.getElementById('auth-msg');
+        msgEl.className = "error-msg";
+
+        if (!username || !password) {
+            msgEl.innerText = "Please fill in username and password.";
+            return;
+        }
+
+        let users = JSON.parse(localStorage.getItem('emoji_users_secure') || '{}');
+
+        if (isRegistering) {
+            const fullname = document.getElementById('fullname-input').value.trim();
+            const contact = document.getElementById('contact-input').value.trim();
+            const dob = document.getElementById('dob-input').value;
+            const gender = document.getElementById('gender-input').value;
+
+            if (!fullname || !contact || !dob || !gender) {
+                msgEl.innerText = "Please fill in all profile details.";
+                return;
+            }
+
+            if (!isPasswordStrong(password)) {
+                msgEl.innerText = "Password does not meet all security criteria.";
+                return;
+            }
+
+            if (users[username]) {
+                msgEl.innerText = "Username already exists. Choose another.";
+                return;
+            }
+
+            generatedOTP = Math.floor(1000 + Math.random() * 9000).toString();
+            document.getElementById('mock-code-display').innerText = generatedOTP;
+
+            pendingUserData = {
+                username: username,
+                password: password,
+                fullname: fullname,
+                contact: contact,
+                country: "Nigeria",
+                dob: dob,
+                gender: gender,
+                balance: 0.00,
+                totalWins: 0,
+                totalWon: 0.00,
+                transactions: []
+            };
+
+            document.getElementById('main-auth-form').style.display = 'none';
+            document.getElementById('auth-action-container').style.display = 'none';
+            document.getElementById('otp-fields').style.display = 'block';
+            document.getElementById('auth-subtitle').innerText = "Human & Contact Verification";
+            msgEl.innerText = "";
+
+        } else {
+            if (!users[username] || users[username].password !== password) {
+                msgEl.innerText = "Invalid username or password.";
+                return;
+            }
+            loginUser(username);
+        }
+    }
+
+    function verifyOTP() {
+        const enteredOTP = document.getElementById('otp-input').value.trim();
+        const msgEl = document.getElementById('auth-msg');
+
+        if (enteredOTP !== generatedOTP) {
+            msgEl.className = "error-msg";
+            msgEl.innerText = "Incorrect OTP code. Please check the code shown above.";
+            return;
+        }
+
+        let users = JSON.parse(localStorage.getItem('emoji_users_secure') || '{}');
+        users[pendingUserData.username] = pendingUserData;
+        localStorage.setItem('emoji_users_secure', JSON.stringify(users));
+
+        msgEl.className = "success-msg";
+        msgEl.innerText = "Verification successful! Entering dashboard...";
+
+        setTimeout(() => {
+            loginUser(pendingUserData.username);
+        }, 1000);
+    }
+
+    function cancelOTP() {
+        document.getElementById('otp-fields').style.display = 'none';
+        document.getElementById('main-auth-form').style.display = 'block';
+        document.getElementById('auth-action-container').style.display = 'block';
+        document.getElementById('auth-subtitle').innerText = "Create your profile (Starts at ₦0.00)";
+        document.getElementById('auth-msg').innerText = "";
+    }
+
+    function switchScreen(screenId) {
+        document.querySelectorAll('.screen-section').forEach(el => el.classList.remove('active'));
+        const targetScreen = document.getElementById(screenId);
+        if (targetScreen) {
+            targetScreen.classList.add('active');
+        }
+    }
+
+    function loginUser(username) {
+        currentUser = username;
+        localStorage.setItem('emoji_current_user_secure', username);
+        switchScreen('lobby-screen');
+        document.getElementById('lobby-display-user').innerText = username;
+        updateLobbyWallet();
+
+        const adminMenuItem = document.getElementById('admin-menu-item');
+        if (username.toLowerCase() === ADMIN_USERNAME.toLowerCase()) {
+            adminMenuItem.style.display = 'block';
+        } else {
+            adminMenuItem.style.display = 'none';
+        }
+    }
+
+    function logout() {
+        if (gameActive) return;
+        currentUser = null;
+        selectedStake = 0;
+        localStorage.removeItem('emoji_current_user_secure');
+        document.getElementById('username-input').value = '';
+        document.getElementById('password-input').value = '';
+        document.getElementById('otp-input').value = '';
+        document.getElementById('password-checklist').classList.remove('active');
+        if (isRegistering) toggleAuthMode();
+        switchScreen('auth-screen');
+    }
+
+    function getUsers() {
+        return JSON.parse(localStorage.getItem('emoji_users_secure') || '{}');
+    }
+
+    function saveUserData(updatedUserObj) {
+        let users = getUsers();
+        if (users[currentUser]) {
+            users[currentUser] = updatedUserObj;
+            localStorage.setItem('emoji_users_secure', JSON.stringify(users));
+        }
+    }
+
+    function getCurrentUserObj() {
+        let users = getUsers();
+        let obj = users[currentUser] || { balance: 0, totalWins: 0, totalWon: 0, country: "Nigeria", transactions: [] };
+        if (!obj.transactions) obj.transactions = [];
+        return obj;
+    }
+
+    function updateLobbyWallet() {
+        let userObj = getCurrentUserObj();
+        document.getElementById('lobby-wallet-balance').innerText = `₦${userObj.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
+    }
+
+    function updateWalletDisplay() {
+        let userObj = getCurrentUserObj();
+        document.getElementById('wallet-balance').innerText = `₦${userObj.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
+    }
+
+    function showWalletCashier() {
+        switchScreen('wallet-screen');
+        let userObj = getCurrentUserObj();
+        document.getElementById('cashier-wallet-balance').innerText = `₦${userObj.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
+        document.getElementById('deposit-msg').innerHTML = '';
+        document.getElementById('withdraw-msg').innerHTML = '';
+        document.getElementById('account-number').value = '';
+        document.getElementById('bank-name').value = '';
+        document.getElementById('player-verification-box').style.display = 'none';
+        document.getElementById('player-withdraw-btn').disabled = true;
+        document.getElementById('player-withdraw-btn').style.opacity = '0.5';
+        document.getElementById('player-withdraw-btn').style.cursor = 'not-allowed';
+    }
+
+    function switchWalletTab(tab) {
+        const depBtn = document.getElementById('tab-deposit-btn');
+        const wthBtn = document.getElementById('tab-withdraw-btn');
+        const depForm = document.getElementById('deposit-form');
+        const wthForm = document.getElementById('withdraw-form');
+
+        if (tab === 'deposit') {
+            depBtn.classList.add('active');
+            wthBtn.classList.remove('active');
+            depForm.classList.add('active');
+            wthForm.classList.remove('active');
+        } else {
+            wthBtn.classList.add('active');
+            depBtn.classList.remove('active');
+            wthForm.classList.add('active');
+            depForm.classList.remove('active');
+        }
+    }
+
+    function processDeposit() {
+        const amount = parseFloat(document.getElementById('deposit-amount').value);
+        const msgEl = document.getElementById('deposit-msg');
+
+        if (isNaN(amount) || amount <= 0) {
+            msgEl.className = "error-msg";
+            msgEl.innerText = "Please enter a valid deposit amount.";
+            return;
+        }
+
+        let userObj = getCurrentUserObj();
+        userObj.balance += amount;
+        addTransaction(userObj, 'DEPOSIT', amount, `Funded via ${document.getElementById('deposit-method').value}`);
+        saveUserData(userObj);
+
+        document.getElementById('cashier-wallet-balance').innerText = `₦${userObj.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
+        msgEl.className = "success-msg";
+        msgEl.innerText = `✅ Successfully funded ₦${amount.toLocaleString()} to your wallet!`;
+        document.getElementById('deposit-amount').value = '';
+    }
+
+    function processWithdrawal() {
+        const amount = parseFloat(document.getElementById('withdraw-amount').value);
+        const bankName = document.getElementById('bank-name').value;
+        const accountNum = document.getElementById('account-number').value.trim();
+        const msgEl = document.getElementById('withdraw-msg');
+
+        let userObj = getCurrentUserObj();
+
+        if (isNaN(amount) || amount <= 0) {
+            msgEl.className = "error-msg";
+            msgEl.innerText = "Please enter a valid withdrawal amount.";
+            return;
+        }
+
+        if (amount > userObj.balance) {
+            msgEl.className = "error-msg";
+            msgEl.innerText = "Insufficient wallet balance for this withdrawal.";
+            return;
+        }
+
+        if (!bankName || accountNum.length < 10) {
+            msgEl.className = "error-msg";
+            msgEl.innerText = "Please select a bank and enter a valid 10-digit account number.";
+            return;
+        }
+
+        userObj.balance -= amount;
+        addTransaction(userObj, 'WITHDRAWAL', amount, `Withdrawn to ${bankName} (${accountNum})`);
+        saveUserData(userObj);
+
+        document.getElementById('cashier-wallet-balance').innerText = `₦${userObj.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
+        msgEl.className = "success-msg";
+        msgEl.innerText = `✅ Withdrawal of ₦${amount.toLocaleString()} sent to your ${bankName} account!`;
+        document.getElementById('withdraw-amount').value = '';
+        document.getElementById('account-number').value = '';
+        document.getElementById('player-verification-box').style.display = 'none';
+        document.getElementById('player-withdraw-btn').disabled = true;
+        document.getElementById('player-withdraw-btn').style.opacity = '0.5';
+    }
+
+    function returnToLobbyFromWallet() {
+        switchScreen('lobby-screen');
+        updateLobbyWallet();
+    }
+
+    function showChangePasswordScreen() {
+        switchScreen('change-password-screen');
+        document.getElementById('old-password').value = '';
+        document.getElementById('new-password').value = '';
+        document.getElementById('change-pwd-msg').innerText = '';
+    }
+
+    function executeChangePassword() {
+        const oldPwd = document.getElementById('old-password').value.trim();
+        const newPwd = document.getElementById('new-password').value.trim();
+        const msgEl = document.getElementById('change-pwd-msg');
+
+        let userObj = getCurrentUserObj();
+        if (userObj.password !== oldPwd) {
+            msgEl.className = "error-msg";
+            msgEl.innerText = "Current password is incorrect.";
+            return;
+        }
+
+        if (!isPasswordStrong(newPwd)) {
+            msgEl.className = "error-msg";
+            msgEl.innerText = "New password does not meet all security criteria.";
+            return;
+        }
+
+        userObj.password = newPwd;
+        saveUserData(userObj);
+
+        msgEl.className = "success-msg";
+        msgEl.innerText = "✅ Password updated successfully!";
+        document.getElementById('old-password').value = '';
+        document.getElementById('new-password').value = '';
+    }
+
+    function returnToLobby() {
+        if (gameActive) {
+            alert("⚠️ You cannot leave the room while an active match is in progress!");
+            return;
+        }
+
+        if (selectedStake > 0) {
+            socket.emit('leave_queue', { username: currentUser });
+            
+            let userObj = getCurrentUserObj();
+            userObj.balance += selectedStake;
+            addTransaction(userObj, 'REFUND', selectedStake, `Cancelled queue for ${selectedGroupName}`);
+            saveUserData(userObj);
+            
+            selectedStake = 0;
+        }
+
+        clearInterval(timerInterval);
+        switchScreen('lobby-screen');
+        updateLobbyWallet();
+    }
+
+    function showLeaderboard() {
+        switchScreen('leaderboard-screen');
+
+        let users = getUsers();
+        let userArray = Object.keys(users).map(username => ({
+            username: username,
+            totalWins: users[username].totalWins || 0,
+            totalWon: users[username].totalWon || 0
+        }));
+
+        let mockHunters = [
+            { username: "AlexHunter", totalWins: 42, totalWon: 35000.00 },
+            { username: "Sarah_G", totalWins: 38, totalWon: 28500.00 },
+            { username: "CryptoKing99", totalWins: 31, totalWon: 21000.00 },
+            { username: "FastFingers", totalWins: 25, totalWon: 17500.00 },
+            { username: "LuckyStrike", totalWins: 22, totalWon: 14000.00 }
+        ];
+
+        userArray.forEach(ua => {
+            if (!mockHunters.some(mh => mh.username === ua.username)) {
+                mockHunters.push(ua);
+            } else {
+                let existing = mockHunters.find(mh => mh.username === ua.username);
+                existing.totalWins = ua.totalWins;
+                existing.totalWon = ua.totalWon;
+            }
+        });
+
+        mockHunters.sort((a, b) => b.totalWins - a.totalWins);
+        const top20 = mockHunters.slice(0, 20);
+
+        const container = document.getElementById('leaderboard-container');
+        container.innerHTML = '';
+
+        top20.forEach((user, index) => {
+            let rankClass = '';
+            let medal = `#${index + 1}`;
+            if (index === 0) { rankClass = 'rank-1'; medal = '🥇 1st'; }
+            else if (index === 1) { rankClass = 'rank-2'; medal = '🥈 2nd'; }
+            else if (index === 2) { rankClass = 'rank-3'; medal = '🥉 3rd'; }
+
+            const item = document.createElement('div');
+            item.classList.add('leaderboard-item');
+            item.innerHTML = `
+                <div>
+                    <span class="${rankClass}">${medal}</span> 
+                    <strong>${user.username}</strong>
+                </div>
+                <div style="text-align: right; color: #38bdf8;">
+                    <strong>${user.totalWins} Wins</strong><br>
+                    <span style="font-size: 0.75rem; color: #94a3b8;">₦${user.totalWon.toLocaleString()}</span>
+                </div>
+            `;
+            container.appendChild(item);
+        });
+    }
+
+    function returnToLobbyFromLeaderboard() {
+        switchScreen('lobby-screen');
+        updateLobbyWallet();
+    }
+
+    function selectBox(index, boxEl) {
+        if (!gameActive || !isMyTurn) return;
+
+        boxEl.classList.add('revealed');
+        const messageEl = document.getElementById('message');
+        let userObj = getCurrentUserObj();
+        
+        if (index === treasureIndex) {
+            boxEl.innerText = currentTreasureEmoji;
+            
+            let totalPool = selectedStake * 2;
+            let platformFee = totalPool * 0.05; 
+            let netWinnings = totalPool - platformFee; 
+            
+            userObj.balance += netWinnings;
+            userObj.totalWins = (userObj.totalWins || 0) + 1;
+            userObj.totalWon = (userObj.totalWon || 0) + (netWinnings - selectedStake);
+            addTransaction(userObj, 'WIN', netWinnings, `Won ${selectedGroupName} treasure pool`);
+            saveUserData(userObj);
+            
+            socket.emit('player_won', {
+                roomId: currentRoomId,
+                winner: currentUser
+            });
+
+            gameActive = false;
+            selectedStake = 0;
+            clearInterval(timerInterval);
+            messageEl.innerHTML = `🎉 YOU FOUND IT! Won ₦${netWinnings.toLocaleString()} total credited in the ${selectedGroupName} (5% fee applied).`;
+            document.getElementById('turn-indicator').innerText = "Victory!";
+        } else {
+            let randomDecoy = decoyPool[Math.floor(Math.random() * decoyPool.length)];
+            boxEl.innerText = randomDecoy;
+            boxEl.disabled = true;
+            messageEl.innerText = "Wrong box! Turn passing to opponent...";
+
+            socket.emit('play_turn', {
+                roomId: currentRoomId,
+                username: currentUser,
+                index: index,
+                decoyEmoji: randomDecoy
+            });
+
+            isMyTurn = false;
+            currentTurnPlayer = roomPlayers.find(p => p !== currentUser);
+            turnTimeLeft = 6;
+            updateTurnDisplay();
+
+            const boxes = document.querySelectorAll('.box');
+            boxes.forEach(b => {
+                if (!b.classList.contains('revealed')) {
+                    b.disabled = true;
+                }
+            });
+        }
+    }
+
+    window.onload = function() {
+        const savedUser = localStorage.getItem('emoji_current_user_secure');
+        if (savedUser) {
+            let users = getUsers();
+            if (users[savedUser]) {
+                loginUser(savedUser);
+            }
+        }
+    };
+</script>
+
+</body>
+</html>>
