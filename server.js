@@ -1,5 +1,5 @@
 const express = require('express');
-const http = require('http');
+const http = http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const path = require('path');
@@ -9,6 +9,11 @@ app.use(cors());
 
 // Serve static files from your project root folder
 app.use(express.static(__dirname));
+
+// Root route to serve your main game page (money.html)
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'money.html'));
+});
 
 const server = http.createServer(app);
 const io = new Server(server, {
