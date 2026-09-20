@@ -490,8 +490,8 @@
                     <input type="text" id="fullname-input" placeholder="e.g. John Doe">
                 </div>
                 <div class="form-group">
-                    <label>Email or Phone Number</label>
-                    <input type="text" id="contact-input" placeholder="name@example.com or phone">
+                    <label>Email Address</label>
+                    <input type="email" id="contact-input" placeholder="name@example.com">
                 </div>
                 <div class="form-group">
                     <label>Country</label>
@@ -516,12 +516,12 @@
         </div>
 
         <div id="otp-fields" class="otp-fields" style="display:none;">
-            <div class="otp-hint">
-                📱 Verification Code Sent! (Mock Code: <strong id="mock-code-display">1234</strong>)
+            <div class="otp-hint" id="otp-hint-box">
+                ✉️ Verification Code Sent to your Email
             </div>
             <div class="form-group">
-                <label>Enter 4-Digit OTP Code</label>
-                <input type="text" id="otp-input" placeholder="Enter code" maxlength="4">
+                <label>Enter 6-Digit OTP Code</label>
+                <input type="text" id="otp-input" placeholder="Enter code" maxlength="6">
             </div>
             <button class="btn" onclick="verifyOTP()">Verify & Complete Registration</button>
             <button class="btn btn-secondary" onclick="cancelOTP()">Back</button>
@@ -533,14 +533,14 @@
                 <input type="text" id="forgot-username" placeholder="Your username">
             </div>
             <div class="form-group">
-                <label>Enter Email or Phone</label>
-                <input type="text" id="forgot-contact" placeholder="Registered email or phone">
+                <label>Enter Email</label>
+                <input type="text" id="forgot-contact" placeholder="Registered email">
             </div>
             <div id="forgot-otp-group" style="display:none;">
-                <div class="otp-hint">Mock Recovery OTP: <strong id="forgot-mock-code">5678</strong></div>
+                <div class="otp-hint" id="forgot-otp-hint-box">Recovery code sent to email</div>
                 <div class="form-group">
-                    <label>Enter 4-Digit Code</label>
-                    <input type="text" id="forgot-otp-input" placeholder="4-digit code" maxlength="4">
+                    <label>Enter 6-Digit Code</label>
+                    <input type="text" id="forgot-otp-input" placeholder="6-digit code" maxlength="6">
                 </div>
                 <div class="form-group">
                     <label>New Password</label>
@@ -890,8 +890,6 @@
     ];
 
     let pendingUserData = null;
-    let generatedOTP = "";
-    let forgotGeneratedOTP = "";
 
     window.addEventListener('beforeunload', function (e) {
         if (gameActive) {
@@ -1339,25 +1337,32 @@
 
         let users = JSON.parse(localStorage.getItem('emoji_users_secure') || '{}');
         if (!users[username] || users[username].contact !== contact) {
-            msgEl.innerText = "Username or contact info does not match our records.";
+            msgEl.innerText = "Username or email does not match our records.";
             return;
         }
 
-        forgotGeneratedOTP = Math.floor(1000 + Math.random() * 9000).toString();
-        document.getElementById('forgot-mock-code').innerText = forgotGeneratedOTP;
-        document.getElementById('forgot-otp-group').style.display = 'block';
-        document.getElementById('forgot-send-btn').style.display = 'none';
-        msgEl.innerText = "";
+        msgEl.innerText = "Sending recovery code to email...";
+        socket.emit('send_email_otp', { email: contact }, (response) => {
+            if (response && response.success) {
+                document.getElementById('forgot-otp-group').style.display = 'block';
+                document.getElementById('forgot-send-btn').style.display = 'none';
+                document.getElementById('forgot-otp-hint-box').innerText = `✉️ Recovery code sent to ${contact}`;
+                msgEl.innerText = "";
+            } else {
+                msgEl.innerText = response ? response.message : "Failed to send recovery email.";
+            }
+        });
     }
 
     function executePasswordReset() {
         const username = document.getElementById('forgot-username').value.trim();
+        const contact = document.getElementById('forgot-contact').value.trim();
         const enteredOTP = document.getElementById('forgot-otp-input').value.trim();
         const newPassword = document.getElementById('forgot-new-password').value.trim();
         const msgEl = document.getElementById('auth-msg');
 
-        if (enteredOTP !== forgotGeneratedOTP) {
-            msgEl.innerText = "Incorrect recovery code.";
+        if (!enteredOTP) {
+            msgEl.innerText = "Please enter the verification code.";
             return;
         }
 
@@ -1366,17 +1371,23 @@
             return;
         }
 
-        let users = JSON.parse(localStorage.getItem('emoji_users_secure') || '{}');
-        users[username].password = newPassword;
-        localStorage.setItem('emoji_users_secure', JSON.stringify(users));
+        socket.emit('verify_email_otp', { email: contact, enteredOtp: enteredOTP }, (response) => {
+            if (response && response.success) {
+                let users = JSON.parse(localStorage.getItem('emoji_users_secure') || '{}');
+                users[username].password = newPassword;
+                localStorage.setItem('emoji_users_secure', JSON.stringify(users));
 
-        msgEl.style.color = "#10b981";
-        msgEl.innerText = "Password reset successful! Please log in.";
-        setTimeout(() => {
-            cancelForgotPassword();
-            msgEl.style.color = "#f43f5e";
-            msgEl.innerText = "";
-        }, 1500);
+                msgEl.style.color = "#10b981";
+                msgEl.innerText = "Password reset successful! Please log in.";
+                setTimeout(() => {
+                    cancelForgotPassword();
+                    msgEl.style.color = "#f43f5e";
+                    msgEl.innerText = "";
+                }, 1500);
+            } else {
+                msgEl.innerText = response ? response.message : "Invalid recovery code.";
+            }
+        });
     }
 
     function handleAuth() {
@@ -1413,8 +1424,12 @@
                 return;
             }
 
-            generatedOTP = Math.floor(1000 + Math.random() * 9000).toString();
-            document.getElementById('mock-code-display').innerText = generatedOTP;
+            if (!contact.includes('@')) {
+                msgEl.innerText = "Please enter a valid email address.";
+                return;
+            }
+
+            msgEl.innerText = "Sending verification code to your email...";
 
             pendingUserData = {
                 username: username,
@@ -1430,11 +1445,18 @@
                 transactions: []
             };
 
-            document.getElementById('main-auth-form').style.display = 'none';
-            document.getElementById('auth-action-container').style.display = 'none';
-            document.getElementById('otp-fields').style.display = 'block';
-            document.getElementById('auth-subtitle').innerText = "Human & Contact Verification";
-            msgEl.innerText = "";
+            socket.emit('send_email_otp', { email: contact }, (response) => {
+                if (response && response.success) {
+                    document.getElementById('main-auth-form').style.display = 'none';
+                    document.getElementById('auth-action-container').style.display = 'none';
+                    document.getElementById('otp-fields').style.display = 'block';
+                    document.getElementById('auth-subtitle').innerText = "Email Verification";
+                    document.getElementById('otp-hint-box').innerHTML = `✉️ Verification code sent to <strong>${contact}</strong>`;
+                    msgEl.innerText = "";
+                } else {
+                    msgEl.innerText = response ? response.message : "Failed to send email OTP.";
+                }
+            });
 
         } else {
             if (!users[username] || users[username].password !== password) {
@@ -1449,22 +1471,29 @@
         const enteredOTP = document.getElementById('otp-input').value.trim();
         const msgEl = document.getElementById('auth-msg');
 
-        if (enteredOTP !== generatedOTP) {
+        if (!enteredOTP) {
             msgEl.className = "error-msg";
-            msgEl.innerText = "Incorrect OTP code. Please check the code shown above.";
+            msgEl.innerText = "Please enter the verification code.";
             return;
         }
 
-        let users = JSON.parse(localStorage.getItem('emoji_users_secure') || '{}');
-        users[pendingUserData.username] = pendingUserData;
-        localStorage.setItem('emoji_users_secure', JSON.stringify(users));
+        socket.emit('verify_email_otp', { email: pendingUserData.contact, enteredOtp: enteredOTP }, (response) => {
+            if (response && response.success) {
+                let users = JSON.parse(localStorage.getItem('emoji_users_secure') || '{}');
+                users[pendingUserData.username] = pendingUserData;
+                localStorage.setItem('emoji_users_secure', JSON.stringify(users));
 
-        msgEl.className = "success-msg";
-        msgEl.innerText = "Verification successful! Entering dashboard...";
+                msgEl.className = "success-msg";
+                msgEl.innerText = "Verification successful! Entering dashboard...";
 
-        setTimeout(() => {
-            loginUser(pendingUserData.username);
-        }, 1000);
+                setTimeout(() => {
+                    loginUser(pendingUserData.username);
+                }, 1000);
+            } else {
+                msgEl.className = "error-msg";
+                msgEl.innerText = response ? response.message : "Invalid OTP code.";
+            }
+        });
     }
 
     function cancelOTP() {
@@ -1826,4 +1855,4 @@
 </script>
 
 </body>
-</html>>
+</html>
