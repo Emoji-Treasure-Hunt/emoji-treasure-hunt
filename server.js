@@ -3,6 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const path = require('path');
+const nodemailer = require('nodemailer');
 
 const app = express();
 app.use(cors());
@@ -23,6 +24,18 @@ const io = new Server(server, {
     }
 });
 
+// Configure Nodemailer with your email and passkey
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: 'emojitreasurehunt@gmail.com',
+        pass: '6471'
+    }
+});
+
+// Temporary memory store for active OTPs
+let pendingOtps = {};
+
 let waitingQueue = [];
 let activeRooms = {};
 let houseRevenue = 0;
@@ -34,6 +47,66 @@ const emojiPool = ['💎', '🔑', '🪙', '👑', '💰', '🌟', '🏆', '🎁
 
 io.on('connection', (socket) => {
     console.log(`A user connected: ${socket.id}`);
+
+    // Handle generating and sending the email OTP
+    socket.on('send_email_otp', async (data, callback) => {
+        const { email } = data;
+        if (!email) {
+            return callback({ success: false, message: 'Email is required.' });
+        }
+
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        
+        pendingOtps[email] = {
+            otp,
+            expiresAt: Date.now() + 5 * 60 * 1000 // 5 minutes expiration
+        };
+
+        try {
+            await transporter.sendMail({
+                from: '"Emoji Treasure Hunt" <emojitreasurehunt@gmail.com>',
+                to: email,
+                subject: 'Your Account Verification Code',
+                text: `Hello! Your verification code is: ${otp}. It expires in 5 minutes.`
+            });
+            console.log(`OTP sent to ${email}: ${otp}`);
+            if (typeof callback === 'function') {
+                callback({ success: true, message: 'OTP sent to your email!' });
+            }
+        } catch (error) {
+            console.error('Error sending email:', error);
+            if (typeof callback === 'function') {
+                callback({ success: false, message: 'Failed to send email. Check server configuration.' });
+            }
+        }
+    });
+
+    // Handle verifying the OTP entered by the user
+    socket.on('verify_email_otp', (data, callback) => {
+        const { email, enteredOtp } = data;
+        const record = pendingOtps[email];
+
+        if (!record) {
+            return callback({ success: false, message: 'No active OTP found. Request a new one.' });
+        }
+
+        if (Date.now() > record.expiresAt) {
+            delete pendingOtps[email];
+            return callback({ success: false, message: 'OTP has expired. Request a new code.' });
+        }
+
+        if (record.otp === enteredOtp) {
+            delete pendingOtps[email]; // Clear code after use
+            console.log(`Email ${email} successfully verified!`);
+            if (typeof callback === 'function') {
+                callback({ success: true, message: 'Verification successful!' });
+            }
+        } else {
+            if (typeof callback === 'function') {
+                callback({ success: false, message: 'Invalid OTP code. Please try again.' });
+            }
+        }
+    });
 
     // Handle joining queue and instant matchmaking
     socket.on('join_queue', (data) => {
