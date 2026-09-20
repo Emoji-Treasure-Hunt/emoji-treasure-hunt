@@ -24,7 +24,7 @@ const io = new Server(server, {
     }
 });
 
-// Configure Nodemailer with your email and passkey
+// Configure Nodemailer with your email and updated App Password
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
