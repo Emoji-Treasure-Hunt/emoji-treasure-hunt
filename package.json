@@ -9,6 +9,7 @@
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "nodemailer": "^10.0.10",
+    "resend": "^6.28.1",
     "socket.io": "^4.8.3"
   }
 }

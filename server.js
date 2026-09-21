@@ -3,7 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const path = require('path');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend'); // Import Resend SDK
 
 const app = express();
 app.use(cors());
@@ -24,14 +24,8 @@ const io = new Server(server, {
     }
 });
 
-// Configure Nodemailer with your email and updated App Password
-const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-        user: 'emojitreasurehunt@gmail.com',
-        pass: 'edlr dfhd suqa zlkf'
-    }
-});
+// Initialize Resend safely using the environment variable
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Temporary memory store for active OTPs
 let pendingOtps = {};
@@ -48,7 +42,7 @@ const emojiPool = ['💎', '🔑', '🪙', '👑', '💰', '🌟', '🏆', '🎁
 io.on('connection', (socket) => {
     console.log(`A user connected: ${socket.id}`);
 
-    // Handle generating and sending the email OTP
+    // Handle generating and sending the email OTP via Resend API
     socket.on('send_email_otp', async (data, callback) => {
         const { email } = data;
         if (!email) {
@@ -63,13 +57,19 @@ io.on('connection', (socket) => {
         };
 
         try {
-            await transporter.sendMail({
-                from: '"Emoji Treasure Hunt" <emojitreasurehunt@gmail.com>',
-                to: email,
+            const { data, error } = await resend.emails.send({
+                from: 'Emoji Treasure Hunt <onboarding@resend.dev>',
+                to: [email],
                 subject: 'Your Account Verification Code',
-                text: `Hello! Your verification code is: ${otp}. It expires in 5 minutes.`
+                html: `<p>Hello! Your verification code is: <strong>${otp}</strong>. It expires in 5 minutes.</p>`
             });
-            console.log(`OTP sent to ${email}: ${otp}`);
+
+            if (error) {
+                console.error('Resend API error:', error);
+                return callback({ success: false, message: 'Failed to send email via Resend.' });
+            }
+
+            console.log(`OTP sent via Resend to ${email}: ${otp}`);
             if (typeof callback === 'function') {
                 callback({ success: true, message: 'OTP sent to your email!' });
             }
