@@ -1,169 +1,157 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const axios = require('axios');
-const cors = require('cors');
 const path = require('path');
+const https = require('https');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-    cors: { origin: "*" }
-});
+const io = new Server(server);
 
+// Middleware
 app.use(express.json());
-app.use(cors());
+app.use(express.urlencoded({ extended: true }));
 
-// Serve money.html at the root URL
+// Serve static files / money.html
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'money.html'));
 });
 
-// Serve static assets from the root directory
-app.use(express.static(__dirname));
+// Paystack Secret Key provided
+const PAYSTACK_SECRET_KEY = 'sk_test_a89bb1d0da69c502d735d9df85a247a09c351972';
 
-// In-memory data stores for testing
-let waitingQueues = {
-    'Micro Lounge': [],
-    'Bronze Lounge': [],
-    'Silver Arena': [],
-    'Gold Chamber': []
-};
+// Payment Initialization Route for Paystack
+app.post('/initialize-payment', (req, res) => {
+    const { email, amount } = req.body;
+
+    if (!email || !amount) {
+        return res.status(400).json({ success: false, message: 'Email and amount are required.' });
+    }
+
+    const params = JSON.stringify({
+        email: email,
+        amount: amount * 100 // Convert Naira to Kobo
+    });
+
+    const options = {
+        hostname: 'api.paystack.co',
+        port: 443,
+        path: '/transaction/initialize',
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+            'Content-Type': 'application/json'
+        }
+    };
+
+    const reqPaystack = https.request(options, apiRes => {
+        let data = '';
+
+        apiRes.on('data', chunk => {
+            data += chunk;
+        });
+
+        apiRes.on('end', () => {
+            try {
+                const response = JSON.parse(data);
+                if (response.status) {
+                    res.json({ success: true, data: response.data });
+                } else {
+                    res.status(400).json({ success: false, message: response.message || 'Initialization failed' });
+                }
+            } catch (e) {
+                res.status(500).json({ success: false, message: 'Invalid response from Paystack API' });
+            }
+        });
+    });
+
+    reqPaystack.on('error', error => {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Server connection error to Paystack' });
+    });
+
+    reqPaystack.write(params);
+    reqPaystack.end();
+});
+
+// In-Memory Database / Game State Variables
+let waitingPlayers = [];
 let activeRooms = {};
 let houseRevenue = 0;
 let incomeLogs = [];
 let withdrawalLogs = [];
 let supportTickets = [];
 
-// ==========================================
-// PAYSTACK PAYMENT INITIALIZATION ROUTE
-// ==========================================
-app.post('/initialize-payment', async (req, res) => {
-    try {
-        const { email, amount } = req.body; // amount in Naira
-
-        const response = await axios.post(
-            'https://api.paystack.co/transaction/initialize',
-            {
-                email: email,
-                amount: amount * 100 // Paystack expects amount in kobo
-            },
-            {
-                headers: {
-                    // Replace with your actual Test Secret Key from Paystack Dashboard
-                    Authorization: `Bearer sk_test_YOUR_ACTUAL_SECRET_KEY`, 
-                    'Content-Type': 'application/json'
-                }
-            }
-        );
-
-        return res.status(200).json({
-            success: true,
-            data: response.data.data
-        });
-    } catch (error) {
-        console.error('Payment initialization error:', error.response?.data || error.message);
-        return res.status(500).json({ success: false, message: 'Initialization failed' });
-    }
-});
-
-// ==========================================
-// SOCKET.IO REAL-TIME MULTIPLAYER & ADMIN EVENTS
-// ==========================================
+// Socket.io Game Logic & Management
 io.on('connection', (socket) => {
-    console.log(`Player connected: ${socket.id}`);
+    console.log(`User connected: ${socket.id}`);
 
-    // Join Matchmaking Queue
     socket.on('join_queue', (data) => {
         const { username, stake } = data;
-        let groupName = 'Micro Lounge';
-        if (stake === 500) groupName = 'Bronze Lounge';
-        else if (stake === 1000) groupName = 'Silver Arena';
-        else if (stake === 5000) groupName = 'Gold Chamber';
+        
+        // Remove player if already in queue
+        waitingPlayers = waitingPlayers.filter(p => p.username !== username);
 
-        if (!waitingQueues[groupName]) {
-            waitingQueues[groupName] = [];
-        }
+        waitingPlayers.push({ socketId: socket.id, username, stake });
+        console.log(`${username} joined queue with stake ₦${stake}`);
 
-        waitingQueues[groupName].push({ socketId: socket.id, username: username, stake: stake });
+        // Check if we have at least 2 players for a match
+        if (waitingPlayers.length >= 2) {
+            const player1 = waitingPlayers.shift();
+            const player2 = waitingPlayers.shift();
 
-        // Matchmaking logic: Check if 2 players are in the queue
-        if (waitingQueues[groupName].length >= 2) {
-            let player1 = waitingQueues[groupName].shift();
-            let player2 = waitingQueues[groupName].shift();
-
-            let roomId = 'room_' + Math.random().toString(36).substring(2, 9);
-            
-            // Randomly select a winning index out of 40 boxes and a target emoji
-            const targetEmojis = ['💎', '👑', '🪙', '💰', '🔑', '⭐', '🎁'];
-            let targetEmoji = targetEmojis[Math.floor(Math.random() * targetEmojis.length)];
-            let winningIndex = Math.floor(Math.random() * 40);
+            const roomId = 'room_' + Date.now();
+            const targetEmojis = ['💎', '🔑', '👑', '🪙', '🏆'];
+            const targetEmoji = targetEmojis[Math.floor(Math.random() * targetEmojis.length)];
+            const winningIndex = Math.floor(Math.random() * 40); // 40 boxes grid
 
             activeRooms[roomId] = {
                 players: [player1.username, player2.username],
-                stake: stake,
-                targetEmoji: targetEmoji,
-                winningIndex: winningIndex,
+                stake: player1.stake,
+                targetEmoji,
+                winningIndex,
                 turn: player1.username
             };
 
-            // Join both sockets to the room
-            io.sockets.sockets.get(player1.socketId)?.join(roomId);
-            io.sockets.sockets.get(player2.socketId)?.join(roomId);
+            io.to(player1.socketId).emit('match_found', { roomId, players: [player1.username, player2.username], targetEmoji, winningIndex });
+            io.to(player2.socketId).emit('match_found', { roomId, players: [player1.username, player2.username], targetEmoji, winningIndex });
 
-            // Broadcast match found to room
-            io.to(roomId).emit('match_found', {
-                roomId: roomId,
-                players: [player1.username, player2.username],
-                targetEmoji: targetEmoji,
-                winningIndex: winningIndex
-            });
+            console.log(`Match created in room ${roomId} between ${player1.username} and ${player2.username}`);
         }
     });
 
-    // Leave Queue Handler
-    socket.on('leave_queue', (data) => {
-        for (let group in waitingQueues) {
-            waitingQueues[group] = waitingQueues[group].filter(p => p.username !== data.username);
-        }
-    });
-
-    // Gameplay Turn Handling
     socket.on('play_turn', (data) => {
         const { roomId, username, index, decoyEmoji } = data;
-        let room = activeRooms[roomId];
+        const room = activeRooms[roomId];
         if (room) {
-            // Broadcast opponent's move to the other player in the room
-            socket.to(roomId).emit('opponent_played', {
-                index: index,
-                decoyEmoji: decoyEmoji,
-                nextTurn: room.players.find(p => p !== username)
-            });
+            socket.broadcast.emit('opponent_played', { index, decoyEmoji });
         }
     });
 
-    // Player Won Handler
     socket.on('player_won', (data) => {
         const { roomId, winner } = data;
-        let room = activeRooms[roomId];
+        const room = activeRooms[roomId];
         if (room) {
-            let totalPool = room.stake * 2;
-            let commission = totalPool * 0.05; // 5% House Revenue
+            let houseCut = room.stake * 2 * 0.05; // 5% house commission
+            houseRevenue += houseCut;
             
-            houseRevenue += commission;
             incomeLogs.unshift({
                 type: 'COMMISSION',
-                description: `5% fee from ${room.stake * 2} pool (${winner} won)`,
-                amount: commission,
+                description: `5% fee from ${room.stake * 2} pool match`,
+                amount: houseCut,
                 date: new Date().toLocaleString()
             });
 
-            io.to(roomId).emit('game_over', { winner: winner });
+            io.emit('game_over', { winner });
             delete activeRooms[roomId];
         }
     });
 
-    // Admin Hub Endpoints
+    socket.on('leave_queue', (data) => {
+        const { username } = data;
+        waitingPlayers = waitingPlayers.filter(p => p.username !== username);
+    });
+
     socket.on('get_house_revenue', (callback) => {
         callback({
             revenue: houseRevenue,
@@ -181,20 +169,15 @@ io.on('connection', (socket) => {
 
         houseRevenue -= amount;
         withdrawalLogs.unshift({
-            amount: amount,
-            bankName: bankName,
-            accountNumber: accountNumber,
+            amount,
+            bankName,
+            accountNumber,
             date: new Date().toLocaleString()
         });
 
-        callback({
-            success: true,
-            message: `Successfully withdrawn ₦${amount.toLocaleString()} to ${bankName} (${accountNumber})`,
-            newRevenue: houseRevenue
-        });
+        callback({ success: true, message: `Successfully withdrew ₦${amount.toLocaleString()} to ${bankName} (${accountNumber})`, newRevenue: houseRevenue });
     });
 
-    // Support Ticket Handling
     socket.on('submit_support_ticket', (data, callback) => {
         const ticketId = 'TICK_' + Math.floor(1000 + Math.random() * 9000);
         supportTickets.unshift({
@@ -205,7 +188,7 @@ io.on('connection', (socket) => {
             status: 'Pending',
             date: new Date().toLocaleString()
         });
-        callback({ success: true, ticketId: ticketId });
+        callback({ success: true, ticketId });
     });
 
     socket.on('get_support_tickets', (callback) => {
@@ -213,7 +196,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('resolve_ticket', (ticketId, callback) => {
-        let ticket = supportTickets.find(t => t.id === ticketId);
+        const ticket = supportTickets.find(t => t.id === ticketId);
         if (ticket) {
             ticket.status = 'Resolved';
             callback({ success: true });
@@ -223,14 +206,12 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        console.log(`Player disconnected: ${socket.id}`);
-        for (let group in waitingQueues) {
-            waitingQueues[group] = waitingQueues[group].filter(p => p.socketId !== socket.id);
-        }
+        console.log(`User disconnected: ${socket.id}`);
+        waitingPlayers = waitingPlayers.filter(p => p.socketId !== socket.id);
     });
 });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-    console.log(`Emoji Treasure Hunt server running smoothly on port ${PORT}`);
+    console.log(`Server running live on port ${PORT}`);
 });
