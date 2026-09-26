@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Emoji Treasure Hunt</title>
     
+    <!-- PAYSTACK CHECKOUT SCRIPT -->
+    <script src="https://js.paystack.co/v1/inline.js"></script>
+
     <!-- SOCKET.IO & SERVER CONNECTION SCRIPTS -->
     <script src="https://cdn.socket.io/4.4.1/socket.io.min.js"></script>
     <script>
@@ -1602,6 +1605,7 @@
         }
     }
 
+    // UPDATED PAYSTACK INTEGRATED DEPOSIT FUNCTION
     function processDeposit() {
         const amount = parseFloat(document.getElementById('deposit-amount').value);
         const msgEl = document.getElementById('deposit-msg');
@@ -1613,14 +1617,36 @@
         }
 
         let userObj = getCurrentUserObj();
-        userObj.balance += amount;
-        addTransaction(userObj, 'DEPOSIT', amount, `Funded via ${document.getElementById('deposit-method').value}`);
-        saveUserData(userObj);
+        let userEmail = userObj.contact || "player@emojitreasurehunt.com";
 
-        document.getElementById('cashier-wallet-balance').innerText = `₦${userObj.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
         msgEl.className = "success-msg";
-        msgEl.innerText = `✅ Successfully funded ₦${amount.toLocaleString()} to your wallet!`;
-        document.getElementById('deposit-amount').value = '';
+        msgEl.innerText = "⏳ Opening Paystack secure checkout...";
+
+        let handler = PaystackPop.setup({
+            key: 'pk_test_75e46750d66e069c66c8a7cd2173c137da219164', // Your Test Public Key
+            email: userEmail,
+            amount: amount * 100, // Paystack processes amount in kobo (Naira * 100)
+            currency: 'NGN',
+            ref: 'ETH_' + Math.floor((Math.random() * 1000000000) + 1), // Unique transaction reference
+            callback: function(response) {
+                // This block runs when payment is successful
+                userObj.balance += amount;
+                addTransaction(userObj, 'DEPOSIT', amount, `Funded via Paystack (Ref: ${response.reference})`);
+                saveUserData(userObj);
+
+                document.getElementById('cashier-wallet-balance').innerText = `₦${userObj.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
+                updateLobbyWallet();
+                
+                msgEl.className = "success-msg";
+                msgEl.innerText = `✅ Successfully funded ₦${amount.toLocaleString()} to your wallet via Paystack!`;
+                document.getElementById('deposit-amount').value = '';
+            },
+            onClose: function() {
+                msgEl.className = "error-msg";
+                msgEl.innerText = "❌ Payment window closed. Deposit cancelled.";
+            }
+        });
+        handler.openIframe();
     }
 
     function processWithdrawal() {
