@@ -1605,14 +1605,14 @@
         }
     }
 
-    // UPDATED PAYSTACK INTEGRATED DEPOSIT FUNCTION
+    // UPDATED PAYSTACK SERVER-CONNECTED DEPOSIT FUNCTION
     function processDeposit() {
         const amount = parseFloat(document.getElementById('deposit-amount').value);
         const msgEl = document.getElementById('deposit-msg');
 
-        if (isNaN(amount) || amount <= 0) {
+        if (isNaN(amount) || amount <= 100) {
             msgEl.className = "error-msg";
-            msgEl.innerText = "Please enter a valid deposit amount.";
+            msgEl.innerText = "Please enter a valid deposit amount (Minimum ₦100).";
             return;
         }
 
@@ -1620,33 +1620,54 @@
         let userEmail = userObj.contact || "player@emojitreasurehunt.com";
 
         msgEl.className = "success-msg";
-        msgEl.innerText = "⏳ Opening Paystack secure checkout...";
+        msgEl.innerText = "⏳ Initializing secure Paystack checkout...";
 
-        let handler = PaystackPop.setup({
-            key: 'pk_test_75e46750d66e069c66c8a7cd2173c137da219164', // Your Test Public Key
-            email: userEmail,
-            amount: amount * 100, // Paystack processes amount in kobo (Naira * 100)
-            currency: 'NGN',
-            ref: 'ETH_' + Math.floor((Math.random() * 1000000000) + 1), // Unique transaction reference
-            callback: function(response) {
-                // This block runs when payment is successful
-                userObj.balance += amount;
-                addTransaction(userObj, 'DEPOSIT', amount, `Funded via Paystack (Ref: ${response.reference})`);
-                saveUserData(userObj);
-
-                document.getElementById('cashier-wallet-balance').innerText = `₦${userObj.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
-                updateLobbyWallet();
+        // Call backend server to initialize transaction safely
+        fetch('/initialize-payment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: userEmail, amount: amount })
+        })
+        .then(res => res.json())
+        .then(result => {
+            if (result.success && result.data && result.data.access_code) {
+                msgEl.innerText = "⏳ Opening Paystack secure checkout...";
                 
-                msgEl.className = "success-msg";
-                msgEl.innerText = `✅ Successfully funded ₦${amount.toLocaleString()} to your wallet via Paystack!`;
-                document.getElementById('deposit-amount').value = '';
-            },
-            onClose: function() {
+                let handler = PaystackPop.setup({
+                    key: 'pk_test_75e46750d66e069c66c8a7cd2173c137da219164', // Your Paystack Test Public Key
+                    email: userEmail,
+                    amount: amount * 100, // Paystack kobo conversion
+                    currency: 'NGN',
+                    ref: result.data.reference,
+                    callback: function(response) {
+                        // Successful transaction callback
+                        userObj.balance += amount;
+                        addTransaction(userObj, 'DEPOSIT', amount, `Funded via Paystack (Ref: ${response.reference})`);
+                        saveUserData(userObj);
+
+                        document.getElementById('cashier-wallet-balance').innerText = `₦${userObj.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
+                        updateLobbyWallet();
+                        
+                        msgEl.className = "success-msg";
+                        msgEl.innerText = `✅ Successfully funded ₦${amount.toLocaleString()} to your wallet via Paystack!`;
+                        document.getElementById('deposit-amount').value = '';
+                    },
+                    onClose: function() {
+                        msgEl.className = "error-msg";
+                        msgEl.innerText = "❌ Payment window closed. Deposit cancelled.";
+                    }
+                });
+                handler.openIframe();
+            } else {
                 msgEl.className = "error-msg";
-                msgEl.innerText = "❌ Payment window closed. Deposit cancelled.";
+                msgEl.innerText = "❌ Failed to initialize payment from server. Please check keys.";
             }
+        })
+        .catch(err => {
+            console.error(err);
+            msgEl.className = "error-msg";
+            msgEl.innerText = "❌ Network error communicating with server.";
         });
-        handler.openIframe();
     }
 
     function processWithdrawal() {
