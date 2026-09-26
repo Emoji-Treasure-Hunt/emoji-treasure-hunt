@@ -35,12 +35,10 @@
                 return;
             }
 
-            // Deduct stake and update local user storage immediately
             userObj.balance -= stakeAmount;
             addTransaction(userObj, 'STAKE', stakeAmount, `Joined ${groupName} queue`);
             saveUserData(userObj);
 
-            // Switch to the game screen immediately so the player sees the searching UI
             switchScreen('game-screen');
             document.getElementById('display-user').innerText = username;
             document.getElementById('active-group-title').innerText = groupName;
@@ -50,7 +48,6 @@
             document.getElementById('message').innerText = "⏳ Looking for an opponent... Please wait!";
             document.getElementById('turn-indicator').innerText = "Searching queue...";
 
-            // Initialize disabled grid boxes while searching
             const gridEl = document.getElementById('game-grid');
             gridEl.innerHTML = '';
             for (let i = 0; i < 40; i++) {
@@ -61,9 +58,8 @@
                 gridEl.appendChild(btn);
             }
 
-            gameActive = false; // Ensure gameActive is false while searching
+            gameActive = false;
 
-            // Explicitly emit socket join event
             socket.emit('join_queue', {
                 username: username,
                 stake: stakeAmount
@@ -71,8 +67,6 @@
         }
 
         socket.on('match_found', (data) => {
-            console.log("Match found!", data);
-            
             currentRoomId = data.roomId;
             const currentUsername = localStorage.getItem('emoji_current_user_secure');
             roomPlayers = data.players; 
@@ -88,8 +82,8 @@
             document.getElementById('current-target-emoji').innerText = currentTreasureEmoji;
 
             gameActive = true;
-            matchTimeLeft = 60; // 1 minute total match time
-            turnTimeLeft = 6;   // 6 seconds per turn
+            matchTimeLeft = 60;
+            turnTimeLeft = 6;
             
             document.getElementById('timer').innerText = matchTimeLeft + 's';
             updateTurnDisplay();
@@ -196,7 +190,6 @@
                     }
                 });
 
-                // Deduct stake from the loser's account upon game over
                 let userObj = getCurrentUserObj();
                 addTransaction(userObj, 'LOSS', selectedStake, `Lost match in ${selectedGroupName}`);
                 saveUserData(userObj);
@@ -206,37 +199,6 @@
                 document.getElementById('turn-indicator').innerText = "Opponent Won!";
                 selectedStake = 0;
             }
-        });
-
-        socket.on('no_winner_refund', (data) => {
-            gameActive = false;
-            clearInterval(timerInterval);
-            selectedStake = 0;
-            
-            const boxes = document.querySelectorAll('.box');
-            boxes.forEach((box, idx) => {
-                box.disabled = true;
-                if (idx === treasureIndex) {
-                    box.innerText = currentTreasureEmoji;
-                    box.classList.add('revealed');
-                }
-            });
-
-            let userObj = getCurrentUserObj();
-            let refundAmount = data ? data.stake : selectedStake;
-            
-            userObj.balance += refundAmount;
-            addTransaction(userObj, 'REFUND', refundAmount, `Full stake refund (${selectedGroupName})`);
-            saveUserData(userObj);
-
-            updateWalletDisplay();
-            
-            // Force lock the turn indicator display and message
-            const turnEl = document.getElementById('turn-indicator');
-            turnEl.innerHTML = `<strong style="color: #f43f5e;">GAME OVER - NO WINNER</strong>`;
-            turnEl.style.borderColor = '#f43f5e';
-
-            document.getElementById('message').innerHTML = `❌ Game Over! Time expired. Full stake refunded: ₦${refundAmount.toLocaleString()}.`;
         });
     </script>
 
@@ -684,13 +646,7 @@
             <div class="form-group">
                 <label>Select Bank</label>
                 <select id="admin-bank-name" onchange="checkAdminAccountForm()">
-                    <option value="">Select bank</option>
-                    <option value="Access Bank">Access Bank</option>
-                    <option value="First Bank">First Bank</option>
-                    <option value="GTBank">Guaranty Trust Bank (GTB)</option>
-                    <option value="UBA">United Bank for Africa (UBA)</option>
-                    <option value="Zenith Bank">Zenith Bank</option>
-                    <option value="Opay">Opay / Moniepoint</option>
+                    <option value="">Loading all banks...</option>
                 </select>
             </div>
             <div class="form-group">
@@ -793,13 +749,7 @@
             <div class="form-group">
                 <label>Select Bank</label>
                 <select id="bank-name" onchange="checkPlayerAccountForm()">
-                    <option value="">Select bank</option>
-                    <option value="Access Bank">Access Bank</option>
-                    <option value="First Bank">First Bank</option>
-                    <option value="GTBank">Guaranty Trust Bank (GTB)</option>
-                    <option value="UBA">United Bank for Africa (UBA)</option>
-                    <option value="Zenith Bank">Zenith Bank</option>
-                    <option value="Opay">Opay / Moniepoint</option>
+                    <option value="">Loading all banks...</option>
                 </select>
             </div>
             <div class="form-group">
@@ -901,6 +851,30 @@
         }
     });
 
+    // Automatically load all Nigerian banks into dropdowns from Paystack on startup
+    function loadAllBanks() {
+        fetch('/get-banks')
+        .then(res => res.json())
+        .then(data => {
+            if (data.success && data.banks) {
+                const selects = ['bank-name', 'admin-bank-name'];
+                selects.forEach(selectId => {
+                    const selectEl = document.getElementById(selectId);
+                    if (selectEl) {
+                        selectEl.innerHTML = '<option value="">Select bank</option>';
+                        data.banks.forEach(bank => {
+                            let opt = document.createElement('option');
+                            opt.value = bank.code; // Store bank code as value
+                            opt.textContent = bank.name;
+                            selectEl.appendChild(opt);
+                        });
+                    }
+                });
+            }
+        })
+        .catch(err => console.error("Error loading banks:", err));
+    }
+
     // Toggle 3-line hamburger menu
     function toggleHamburgerMenu() {
         const menu = document.getElementById('hamburger-dropdown');
@@ -911,7 +885,6 @@
         document.getElementById('hamburger-dropdown').classList.remove('active');
     }
 
-    // Close menu when clicking outside
     window.onclick = function(event) {
         if (!event.target.matches('.menu-btn')) {
             const dropdown = document.getElementById('hamburger-dropdown');
@@ -921,7 +894,6 @@
         }
     }
 
-    // Customer support navigation & submission
     function showSupportModal() {
         switchScreen('support-screen');
         document.getElementById('support-message').value = '';
@@ -1017,7 +989,6 @@
         updateLobbyWallet();
     }
 
-    // Admin Hub with Password Protection, Income History, Withdrawal History & Support Inbox
     function showAdminDashboard() {
         let adminPassword = prompt("🔐 Enter Admin Security Password:");
         const SECURE_ADMIN_PASS = "OnyejeAdmin2026@"; 
@@ -1142,22 +1113,35 @@
         const verifyBox = document.getElementById('account-verification-box');
         const nameDisplay = document.getElementById('verified-account-name');
         const withdrawBtn = document.getElementById('admin-withdraw-btn');
-        const bankName = document.getElementById('admin-bank-name').value;
+        const bankCode = document.getElementById('admin-bank-name').value;
 
-        if (accountNum.length === 10 && bankName !== "") {
-            setTimeout(() => {
-                verifyBox.style.display = 'block';
-                nameDisplay.innerText = "ONYEJE CHUKWUEBUKA PETER";
-                withdrawBtn.disabled = false;
-                withdrawBtn.style.opacity = '1';
-                withdrawBtn.style.cursor = 'pointer';
-            }, 300);
+        if (accountNum.length === 10 && bankCode !== "") {
+            nameDisplay.innerText = "Verifying with bank...";
+            verifyBox.style.display = 'block';
+
+            fetch('/verify-bank-account', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ accountNumber: accountNum, bankCode: bankCode })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    nameDisplay.innerText = data.accountName;
+                    withdrawBtn.disabled = false;
+                    withdrawBtn.style.opacity = '1';
+                    withdrawBtn.style.cursor = 'pointer';
+                } else {
+                    nameDisplay.innerText = "❌ Invalid account details";
+                    withdrawBtn.disabled = true;
+                }
+            })
+            .catch(() => {
+                nameDisplay.innerText = "❌ Verification error";
+            });
         } else {
             verifyBox.style.display = 'none';
-            nameDisplay.innerText = "";
             withdrawBtn.disabled = true;
-            withdrawBtn.style.opacity = '0.5';
-            withdrawBtn.style.cursor = 'not-allowed';
         }
     }
 
@@ -1170,8 +1154,11 @@
 
     function processAdminWithdrawal() {
         const amount = parseFloat(document.getElementById('admin-withdraw-amount').value);
-        const bankName = document.getElementById('admin-bank-name').value;
+        const bankSelect = document.getElementById('admin-bank-name');
+        const bankCode = bankSelect.value;
+        const bankName = bankSelect.options[bankSelect.selectedIndex].text;
         const accountNum = document.getElementById('admin-account-number').value.trim();
+        const accountName = document.getElementById('verified-account-name').innerText;
         const msgEl = document.getElementById('admin-withdraw-msg');
 
         if (isNaN(amount) || amount <= 0) {
@@ -1180,34 +1167,50 @@
             return;
         }
 
-        if (!bankName || accountNum.length < 10) {
+        if (!bankCode || accountNum.length < 10) {
             msgEl.className = "error-msg";
             msgEl.innerText = "Please select a bank and enter a valid 10-digit account number.";
             return;
         }
 
-        socket.emit('admin_withdraw', {
-            username: currentUser,
-            amount: amount,
-            bankName: bankName,
-            accountNumber: accountNum
-        }, (response) => {
-            if (response && response.success) {
-                msgEl.className = "success-msg";
-                msgEl.innerText = `✅ ${response.message}`;
-                document.getElementById('admin-house-balance').innerText = `₦${response.newRevenue.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
-                
-                document.getElementById('admin-withdraw-amount').value = '';
-                document.getElementById('admin-account-number').value = '';
-                document.getElementById('account-verification-box').style.display = 'none';
-                document.getElementById('admin-withdraw-btn').disabled = true;
-                document.getElementById('admin-withdraw-btn').style.opacity = '0.5';
-                
-                setTimeout(() => { showAdminDashboard(); }, 1500);
+        msgEl.className = "success-msg";
+        msgEl.innerText = "⏳ Processing automated payout transfer...";
+
+        fetch('/process-payout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ amount, bankCode, accountNumber: accountNum, accountName })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                socket.emit('admin_withdraw', {
+                    username: currentUser,
+                    amount: amount,
+                    bankName: bankName,
+                    accountNumber: accountNum
+                }, (response) => {
+                    if (response && response.success) {
+                        msgEl.className = "success-msg";
+                        msgEl.innerText = `✅ Payout successful! ₦${amount.toLocaleString()} sent to ${bankName}.`;
+                        document.getElementById('admin-house-balance').innerText = `₦${response.newRevenue.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
+                        
+                        document.getElementById('admin-withdraw-amount').value = '';
+                        document.getElementById('admin-account-number').value = '';
+                        document.getElementById('account-verification-box').style.display = 'none';
+                        document.getElementById('admin-withdraw-btn').disabled = true;
+                        
+                        setTimeout(() => { showAdminDashboard(); }, 1500);
+                    }
+                });
             } else {
                 msgEl.className = "error-msg";
-                msgEl.innerText = `❌ ${response ? response.message : "Withdrawal failed."}`;
+                msgEl.innerText = `❌ Payout failed: ${data.message}`;
             }
+        })
+        .catch(() => {
+            msgEl.className = "error-msg";
+            msgEl.innerText = "❌ Network error processing payout.";
         });
     }
 
@@ -1215,24 +1218,35 @@
         const verifyBox = document.getElementById('player-verification-box');
         const nameDisplay = document.getElementById('player-verified-name');
         const withdrawBtn = document.getElementById('player-withdraw-btn');
-        const bankName = document.getElementById('bank-name').value;
+        const bankCode = document.getElementById('bank-name').value;
 
-        if (accountNum.length === 10 && bankName !== "") {
-            setTimeout(() => {
-                verifyBox.style.display = 'block';
-                let activeUserObj = getCurrentUserObj();
-                let accountHolderName = activeUserObj.fullname ? activeUserObj.fullname.toUpperCase() : currentUser.toUpperCase();
-                nameDisplay.innerText = accountHolderName;
-                withdrawBtn.disabled = false;
-                withdrawBtn.style.opacity = '1';
-                withdrawBtn.style.cursor = 'pointer';
-            }, 300);
+        if (accountNum.length === 10 && bankCode !== "") {
+            nameDisplay.innerText = "Verifying with bank...";
+            verifyBox.style.display = 'block';
+
+            fetch('/verify-bank-account', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ accountNumber: accountNum, bankCode: bankCode })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    nameDisplay.innerText = data.accountName;
+                    withdrawBtn.disabled = false;
+                    withdrawBtn.style.opacity = '1';
+                    withdrawBtn.style.cursor = 'pointer';
+                } else {
+                    nameDisplay.innerText = "❌ Invalid account details";
+                    withdrawBtn.disabled = true;
+                }
+            })
+            .catch(() => {
+                nameDisplay.innerText = "❌ Verification error";
+            });
         } else {
             verifyBox.style.display = 'none';
-            nameDisplay.innerText = "";
             withdrawBtn.disabled = true;
-            withdrawBtn.style.opacity = '0.5';
-            withdrawBtn.style.cursor = 'not-allowed';
         }
     }
 
@@ -1579,7 +1593,6 @@
         document.getElementById('deposit-msg').innerHTML = '';
         document.getElementById('withdraw-msg').innerHTML = '';
         document.getElementById('account-number').value = '';
-        document.getElementById('bank-name').value = '';
         document.getElementById('player-verification-box').style.display = 'none';
         document.getElementById('player-withdraw-btn').disabled = true;
         document.getElementById('player-withdraw-btn').style.opacity = '0.5';
@@ -1605,7 +1618,6 @@
         }
     }
 
-    // UPDATED PAYSTACK SERVER-CONNECTED DEPOSIT FUNCTION
     function processDeposit() {
         const amount = parseFloat(document.getElementById('deposit-amount').value);
         const msgEl = document.getElementById('deposit-msg');
@@ -1622,7 +1634,6 @@
         msgEl.className = "success-msg";
         msgEl.innerText = "⏳ Initializing secure Paystack checkout...";
 
-        // Call backend server to initialize transaction safely
         fetch('/initialize-payment', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1634,13 +1645,12 @@
                 msgEl.innerText = "⏳ Opening Paystack secure checkout...";
                 
                 let handler = PaystackPop.setup({
-                    key: 'pk_test_75e46750d66e069c66c8a7cd2173c137da219164', // Your Paystack Test Public Key
+                    key: 'pk_test_75e46750d66e069c66c8a7cd2173c137da219164',
                     email: userEmail,
-                    amount: amount * 100, // Paystack kobo conversion
+                    amount: amount * 100,
                     currency: 'NGN',
                     ref: result.data.reference,
                     callback: function(response) {
-                        // Successful transaction callback
                         userObj.balance += amount;
                         addTransaction(userObj, 'DEPOSIT', amount, `Funded via Paystack (Ref: ${response.reference})`);
                         saveUserData(userObj);
@@ -1672,8 +1682,11 @@
 
     function processWithdrawal() {
         const amount = parseFloat(document.getElementById('withdraw-amount').value);
-        const bankName = document.getElementById('bank-name').value;
+        const bankSelect = document.getElementById('bank-name');
+        const bankCode = bankSelect.value;
+        const bankName = bankSelect.options[bankSelect.selectedIndex].text;
         const accountNum = document.getElementById('account-number').value.trim();
+        const accountName = document.getElementById('player-verified-name').innerText;
         const msgEl = document.getElementById('withdraw-msg');
 
         let userObj = getCurrentUserObj();
@@ -1690,24 +1703,44 @@
             return;
         }
 
-        if (!bankName || accountNum.length < 10) {
+        if (!bankCode || accountNum.length < 10) {
             msgEl.className = "error-msg";
             msgEl.innerText = "Please select a bank and enter a valid 10-digit account number.";
             return;
         }
 
-        userObj.balance -= amount;
-        addTransaction(userObj, 'WITHDRAWAL', amount, `Withdrawn to ${bankName} (${accountNum})`);
-        saveUserData(userObj);
-
-        document.getElementById('cashier-wallet-balance').innerText = `₦${userObj.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
         msgEl.className = "success-msg";
-        msgEl.innerText = `✅ Withdrawal of ₦${amount.toLocaleString()} sent to your ${bankName} account!`;
-        document.getElementById('withdraw-amount').value = '';
-        document.getElementById('account-number').value = '';
-        document.getElementById('player-verification-box').style.display = 'none';
-        document.getElementById('player-withdraw-btn').disabled = true;
-        document.getElementById('player-withdraw-btn').style.opacity = '0.5';
+        msgEl.innerText = "⏳ Processing automated payout transfer...";
+
+        fetch('/process-payout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ amount, bankCode, accountNumber: accountNum, accountName })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                userObj.balance -= amount;
+                addTransaction(userObj, 'WITHDRAWAL', amount, `Withdrawn to ${bankName} (${accountNum})`);
+                saveUserData(userObj);
+
+                document.getElementById('cashier-wallet-balance').innerText = `₦${userObj.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
+                msgEl.className = "success-msg";
+                msgEl.innerText = `✅ Withdrawal of ₦${amount.toLocaleString()} successfully sent to your ${bankName} account!`;
+                document.getElementById('withdraw-amount').value = '';
+                document.getElementById('account-number').value = '';
+                document.getElementById('player-verification-box').style.display = 'none';
+                document.getElementById('player-withdraw-btn').disabled = true;
+                document.getElementById('player-withdraw-btn').style.opacity = '0.5';
+            } else {
+                msgEl.className = "error-msg";
+                msgEl.innerText = `❌ Payout failed: ${data.message}`;
+            }
+        })
+        .catch(() => {
+            msgEl.className = "error-msg";
+            msgEl.innerText = "❌ Network error processing withdrawal.";
+        });
     }
 
     function returnToLobbyFromWallet() {
@@ -1891,6 +1924,7 @@
     }
 
     window.onload = function() {
+        loadAllBanks();
         const savedUser = localStorage.getItem('emoji_current_user_secure');
         if (savedUser) {
             let users = getUsers();

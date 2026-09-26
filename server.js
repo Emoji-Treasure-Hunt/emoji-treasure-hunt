@@ -74,6 +74,161 @@ app.post('/initialize-payment', (req, res) => {
     reqPaystack.end();
 });
 
+// Dynamic Bank List Route (Fetches all banks live from Paystack)
+app.get('/get-banks', (req, res) => {
+    const options = {
+        hostname: 'api.paystack.co',
+        port: 443,
+        path: '/bank?country=nigeria',
+        method: 'GET',
+        headers: {
+            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`
+        }
+    };
+
+    const reqPaystack = https.request(options, apiRes => {
+        let data = '';
+        apiRes.on('data', chunk => data += chunk);
+        apiRes.on('end', () => {
+            try {
+                const response = JSON.parse(data);
+                if (response.status) {
+                    res.json({ success: true, banks: response.data });
+                } else {
+                    res.status(400).json({ success: false, message: 'Could not fetch bank list.' });
+                }
+            } catch (e) {
+                res.status(500).json({ success: false, message: 'Error parsing bank list.' });
+            }
+        });
+    });
+
+    reqPaystack.on('error', () => res.status(500).json({ success: false, message: 'Network error fetching banks.' }));
+    reqPaystack.end();
+});
+
+// Verify Bank Account Route using dynamic bank codes
+app.post('/verify-bank-account', (req, res) => {
+    const { accountNumber, bankCode } = req.body;
+
+    if (!accountNumber || !bankCode) {
+        return res.status(400).json({ success: false, message: 'Invalid account number or bank code.' });
+    }
+
+    const options = {
+        hostname: 'api.paystack.co',
+        port: 443,
+        path: `/bank/resolve?account_number=${accountNumber}&bank_code=${bankCode}`,
+        method: 'GET',
+        headers: {
+            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`
+        }
+    };
+
+    const reqPaystack = https.request(options, apiRes => {
+        let data = '';
+        apiRes.on('data', chunk => data += chunk);
+        apiRes.on('end', () => {
+            try {
+                const response = JSON.parse(data);
+                if (response.status) {
+                    res.json({ success: true, accountName: response.data.account_name });
+                } else {
+                    res.status(400).json({ success: false, message: 'Could not verify account details.' });
+                }
+            } catch (e) {
+                res.status(500).json({ success: false, message: 'Error parsing bank verification response.' });
+            }
+        });
+    });
+
+    reqPaystack.on('error', () => res.status(500).json({ success: false, message: 'Network error verifying bank.' }));
+    reqPaystack.end();
+});
+
+// Process Automated Payout Transfer Route
+app.post('/process-payout', (req, res) => {
+    const { amount, bankCode, accountNumber, accountName } = req.body;
+
+    if (!amount || !bankCode || !accountNumber) {
+        return res.status(400).json({ success: false, message: 'Missing payout parameters.' });
+    }
+
+    const recipientParams = JSON.stringify({
+        type: 'nuban',
+        name: accountName,
+        account_number: accountNumber,
+        bank_code: bankCode,
+        currency: 'NGN'
+    });
+
+    const recipientOptions = {
+        hostname: 'api.paystack.co',
+        port: 443,
+        path: '/transferrecipient',
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+            'Content-Type': 'application/json'
+        }
+    };
+
+    const recipientReq = https.request(recipientOptions, recipientRes => {
+        let recData = '';
+        recipientRes.on('data', chunk => recData += chunk);
+        recipientRes.on('end', () => {
+            try {
+                const recResponse = JSON.parse(recData);
+                if (!recResponse.status) {
+                    return res.status(400).json({ success: false, message: 'Failed to create transfer recipient.' });
+                }
+
+                const recipientCode = recResponse.data.recipient_code;
+
+                const transferParams = JSON.stringify({
+                    source: 'balance',
+                    amount: amount * 100,
+                    recipient: recipientCode,
+                    reason: 'Emoji Treasure Hunt Withdrawal'
+                });
+
+                const transferOptions = {
+                    hostname: 'api.paystack.co',
+                    port: 443,
+                    path: '/transfer',
+                    method: 'POST',
+                    headers: {
+                        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+                        'Content-Type': 'application/json'
+                    }
+                };
+
+                const transferReq = https.request(transferOptions, transferRes => {
+                    let transData = '';
+                    transferRes.on('data', chunk => transData += chunk);
+                    transferRes.on('end', () => {
+                        const transResponse = JSON.parse(transData);
+                        if (transResponse.status) {
+                            res.json({ success: true, message: 'Transfer queued successfully by Paystack.' });
+                        } else {
+                            res.status(400).json({ success: false, message: transResponse.message || 'Transfer failed.' });
+                        }
+                    });
+                });
+
+                transferReq.write(transferParams);
+                transferReq.end();
+
+            } catch (e) {
+                res.status(500).json({ success: false, message: 'Error processing transfer request.' });
+            }
+        });
+    });
+
+    recipientReq.write(recipientParams);
+    recipientReq.end();
+});
+
 // In-Memory Database / Game State Variables
 let waitingPlayers = [];
 let activeRooms = {};
@@ -89,13 +244,9 @@ io.on('connection', (socket) => {
     socket.on('join_queue', (data) => {
         const { username, stake } = data;
         
-        // Remove player if already in queue
         waitingPlayers = waitingPlayers.filter(p => p.username !== username);
-
         waitingPlayers.push({ socketId: socket.id, username, stake });
-        console.log(`${username} joined queue with stake ₦${stake}`);
 
-        // Check if we have at least 2 players for a match
         if (waitingPlayers.length >= 2) {
             const player1 = waitingPlayers.shift();
             const player2 = waitingPlayers.shift();
@@ -103,7 +254,7 @@ io.on('connection', (socket) => {
             const roomId = 'room_' + Date.now();
             const targetEmojis = ['💎', '🔑', '👑', '🪙', '🏆'];
             const targetEmoji = targetEmojis[Math.floor(Math.random() * targetEmojis.length)];
-            const winningIndex = Math.floor(Math.random() * 40); // 40 boxes grid
+            const winningIndex = Math.floor(Math.random() * 40);
 
             activeRooms[roomId] = {
                 players: [player1.username, player2.username],
@@ -115,8 +266,6 @@ io.on('connection', (socket) => {
 
             io.to(player1.socketId).emit('match_found', { roomId, players: [player1.username, player2.username], targetEmoji, winningIndex });
             io.to(player2.socketId).emit('match_found', { roomId, players: [player1.username, player2.username], targetEmoji, winningIndex });
-
-            console.log(`Match created in room ${roomId} between ${player1.username} and ${player2.username}`);
         }
     });
 
@@ -132,7 +281,7 @@ io.on('connection', (socket) => {
         const { roomId, winner } = data;
         const room = activeRooms[roomId];
         if (room) {
-            let houseCut = room.stake * 2 * 0.05; // 5% house commission
+            let houseCut = room.stake * 2 * 0.05;
             houseRevenue += houseCut;
             
             incomeLogs.unshift({
@@ -206,7 +355,6 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        console.log(`User disconnected: ${socket.id}`);
         waitingPlayers = waitingPlayers.filter(p => p.socketId !== socket.id);
     });
 });
