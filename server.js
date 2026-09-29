@@ -318,12 +318,18 @@ let supportTickets = [];
 io.on('connection', (socket) => {
     console.log(`User connected: ${socket.id}`);
 
-    // Allow frontend to check user wallet balance directly from PostgreSQL database
+    // Allow frontend to check user wallet balance directly from PostgreSQL database via email or username fallback
     socket.on('get_balance', async (data, callback) => {
-        const { email } = data;
+        const { email, username } = data;
         try {
-            const result = await pool.query('SELECT balance FROM users WHERE email = $1', [email]);
-            const balance = result.rows.length > 0 ? parseFloat(result.rows[0].balance) : 0;
+            let result;
+            if (email) {
+                result = await pool.query('SELECT balance FROM users WHERE email = $1', [email]);
+            }
+            if ((!result || result.rows.length === 0) && username) {
+                result = await pool.query('SELECT balance FROM users WHERE username = $1', [username]);
+            }
+            const balance = result && result.rows.length > 0 ? parseFloat(result.rows[0].balance) : 0;
             callback({ success: true, balance });
         } catch (err) {
             console.error("Error fetching balance from DB:", err);

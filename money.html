@@ -1418,8 +1418,6 @@
             return;
         }
 
-        let users = JSON.parse(localStorage.getItem('emoji_users_secure') || '{}');
-
         if (isRegistering) {
             const fullname = document.getElementById('fullname-input').value.trim();
             const contact = document.getElementById('contact-input').value.trim();
@@ -1433,11 +1431,6 @@
 
             if (!isPasswordStrong(password)) {
                 msgEl.innerText = "Password does not meet all security criteria.";
-                return;
-            }
-
-            if (users[username]) {
-                msgEl.innerText = "Username already exists. Choose another.";
                 return;
             }
 
@@ -1476,11 +1469,24 @@
             });
 
         } else {
-            if (!users[username] || users[username].password !== password) {
-                msgEl.innerText = "Invalid username or password.";
-                return;
-            }
-            loginUser(username);
+            // DATABASE-BACKED LOGIN HANDLER MATCHING THE NEW BACKEND
+            msgEl.innerText = "Logging in...";
+            socket.emit('login_user', { username, password }, (response) => {
+                if (response && response.success) {
+                    let users = JSON.parse(localStorage.getItem('emoji_users_secure') || '{}');
+                    users[username] = {
+                        username: response.user.username,
+                        contact: response.user.email,
+                        balance: response.user.balance,
+                        password: password,
+                        transactions: []
+                    };
+                    localStorage.setItem('emoji_users_secure', JSON.stringify(users));
+                    loginUser(username);
+                } else {
+                    msgEl.innerText = response ? response.message : "Invalid username or password.";
+                }
+            });
         }
     }
 
@@ -1496,16 +1502,24 @@
 
         socket.emit('verify_email_otp', { email: pendingUserData.contact, enteredOtp: enteredOTP }, (response) => {
             if (response && response.success) {
-                let users = JSON.parse(localStorage.getItem('emoji_users_secure') || '{}');
-                users[pendingUserData.username] = pendingUserData;
-                localStorage.setItem('emoji_users_secure', JSON.stringify(users));
+                // DATABASE-BACKED REGISTRATION HANDLER MATCHING THE NEW BACKEND
+                socket.emit('register_user', pendingUserData, (regResponse) => {
+                    if (regResponse && regResponse.success) {
+                        let users = JSON.parse(localStorage.getItem('emoji_users_secure') || '{}');
+                        users[pendingUserData.username] = pendingUserData;
+                        localStorage.setItem('emoji_users_secure', JSON.stringify(users));
 
-                msgEl.className = "success-msg";
-                msgEl.innerText = "Verification successful! Entering dashboard...";
+                        msgEl.className = "success-msg";
+                        msgEl.innerText = "Verification & Registration successful! Entering dashboard...";
 
-                setTimeout(() => {
-                    loginUser(pendingUserData.username);
-                }, 1000);
+                        setTimeout(() => {
+                            loginUser(pendingUserData.username);
+                        }, 1000);
+                    } else {
+                        msgEl.className = "error-msg";
+                        msgEl.innerText = regResponse ? regResponse.message : "Registration failed on server.";
+                    }
+                });
             } else {
                 msgEl.className = "error-msg";
                 msgEl.innerText = response ? response.message : "Invalid OTP code.";
@@ -1576,26 +1590,22 @@
         return obj;
     }
 
-    // UPDATED FUNCTION: Synchronizes balance directly from PostgreSQL database via Socket.io
+    // UPDATED FUNCTION: Passes both email and username to accommodate the new database backend query
     function updateLobbyWallet() {
         let userObj = getCurrentUserObj();
         let userEmail = userObj.contact || "";
 
-        if (userEmail) {
-            socket.emit('get_balance', { email: userEmail }, (response) => {
-                if (response && response.success) {
-                    userObj.balance = response.balance;
-                    saveUserData(userObj);
-                    document.getElementById('lobby-wallet-balance').innerText = `₦${response.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
-                    let cashierBal = document.getElementById('cashier-wallet-balance');
-                    if (cashierBal) {
-                        cashierBal.innerText = `₦${response.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
-                    }
+        socket.emit('get_balance', { email: userEmail, username: currentUser }, (response) => {
+            if (response && response.success) {
+                userObj.balance = response.balance;
+                saveUserData(userObj);
+                document.getElementById('lobby-wallet-balance').innerText = `₦${response.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
+                let cashierBal = document.getElementById('cashier-wallet-balance');
+                if (cashierBal) {
+                    cashierBal.innerText = `₦${response.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
                 }
-            });
-        } else {
-            document.getElementById('lobby-wallet-balance').innerText = `₦${userObj.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
-        }
+            }
+        });
     }
 
     function updateWalletDisplay() {
@@ -1754,26 +1764,17 @@
         const newPwd = document.getElementById('new-password').value.trim();
         const msgEl = document.getElementById('change-pwd-msg');
 
-        let userObj = getCurrentUserObj();
-        if (userObj.password !== oldPwd) {
-            msgEl.className = "error-msg";
-            msgEl.innerText = "Current password is incorrect.";
-            return;
-        }
-
-        if (!isPasswordStrong(newPwd)) {
-            msgEl.className = "error-msg";
-            msgEl.innerText = "New password does not meet all security criteria.";
-            return;
-        }
-
-        userObj.password = newPwd;
-        saveUserData(userObj);
-
-        msgEl.className = "success-msg";
-        msgEl.innerText = "✅ Password updated successfully!";
-        document.getElementById('old-password').value = '';
-        document.getElementById('new-password').value = '';
+        socket.emit('change_password', { username: currentUser, oldPassword: oldPwd, newPassword: newPwd }, (response) => {
+            if (response && response.success) {
+                msgEl.className = "success-msg";
+                msgEl.innerText = "✅ Password updated successfully!";
+                document.getElementById('old-password').value = '';
+                document.getElementById('new-password').value = '';
+            } else {
+                msgEl.className = "error-msg";
+                msgEl.innerText = response ? response.message : "Failed to update password.";
+            }
+        });
     }
 
     function returnToLobby() {
