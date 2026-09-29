@@ -1576,6 +1576,7 @@
         return obj;
     }
 
+    // UPDATED FUNCTION: Synchronizes balance directly from PostgreSQL database via Socket.io
     function updateLobbyWallet() {
         let userObj = getCurrentUserObj();
         let userEmail = userObj.contact || "";
@@ -1586,6 +1587,10 @@
                     userObj.balance = response.balance;
                     saveUserData(userObj);
                     document.getElementById('lobby-wallet-balance').innerText = `₦${response.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
+                    let cashierBal = document.getElementById('cashier-wallet-balance');
+                    if (cashierBal) {
+                        cashierBal.innerText = `₦${response.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
+                    }
                 }
             });
         } else {
@@ -1600,6 +1605,7 @@
 
     function showWalletCashier() {
         switchScreen('wallet-screen');
+        updateLobbyWallet(); // Ensures balance is fresh from DB when opening cashier
         let userObj = getCurrentUserObj();
         document.getElementById('cashier-wallet-balance').innerText = `₦${userObj.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
         document.getElementById('deposit-msg').innerHTML = '';
@@ -1865,7 +1871,7 @@
             boxEl.innerText = currentTreasureEmoji;
             
             let totalPool = selectedStake * 2;
-            let platformFee = 15; // UPDATED: ₦15 flat platform fee matching the backend
+            let platformFee = 15; 
             let netWinnings = totalPool - platformFee; 
             
             userObj.balance += netWinnings;
