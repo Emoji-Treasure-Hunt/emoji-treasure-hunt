@@ -388,7 +388,7 @@ io.on('connection', (socket) => {
 
     // 1. Database-backed User Registration Handler (Called after OTP is verified)
     socket.on('register_user', async (data, callback) => {
-        const { username, email, password, fullname, country, dob, gender } = data;
+        const { username, email, password } = data;
         try {
             const existing = await pool.query('SELECT id FROM users WHERE username = $1 OR email = $2', [username, email]);
             if (existing.rows.length > 0) {
@@ -396,14 +396,13 @@ io.on('connection', (socket) => {
             }
 
             await pool.query(
-                `INSERT INTO users (username, email, password, fullname, country, dob, gender, balance) 
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, 0.00)`,
-                [username, email, password, fullname, country || 'Nigeria', dob, gender]
+                `INSERT INTO users (username, email, password, balance) VALUES ($1, $2, $3, 0.00)`,
+                [username, email, password]
             );
 
             callback({ success: true, message: 'Registration successful!' });
         } catch (err) {
-            console.error('Registration error:', err);
+            console.error('Registration error details:', err);
             callback({ success: false, message: 'Server error during registration.' });
         }
     });
