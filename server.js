@@ -386,9 +386,16 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 1. Database-backed User Registration Handler (Called after OTP is verified)
+    // 1. Database-backed User Registration Handler with Bulletproof Email Mapping
     socket.on('register_user', async (data, callback) => {
-        const { username, email, password } = data;
+        const username = data ? data.username : null;
+        const email = data ? (data.email || data.contact) : null;
+        const password = data ? data.password : null;
+
+        if (!username || !email || !password) {
+            return callback({ success: false, message: 'Missing required registration fields.' });
+        }
+
         try {
             const existing = await pool.query('SELECT id FROM users WHERE username = $1 OR email = $2', [username, email]);
             if (existing.rows.length > 0) {
