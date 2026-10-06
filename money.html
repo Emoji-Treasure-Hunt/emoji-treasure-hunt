@@ -482,7 +482,7 @@
 
         <div id="otp-fields" class="otp-fields" style="display:none;">
             <div class="otp-hint" id="otp-hint-box">
-                ✉️️ Verification Code Sent to your Email
+                ✉ Verification Code Sent to your Email
             </div>
             <div class="form-group">
                 <label>Enter 6-Digit OTP Code</label>
@@ -851,7 +851,6 @@
         }
     });
 
-    // Automatically load all Nigerian banks into dropdowns from Paystack on startup
     function loadAllBanks() {
         fetch('/get-banks')
         .then(res => res.json())
@@ -875,7 +874,6 @@
         .catch(err => console.error("Error loading banks:", err));
     }
 
-    // Toggle 3-line hamburger menu
     function toggleHamburgerMenu() {
         const menu = document.getElementById('hamburger-dropdown');
         menu.classList.toggle('active');
@@ -918,11 +916,11 @@
         }, (response) => {
             if (response && response.success) {
                 msgEl.className = "success-msg";
-                msgEl.innerText = `✅ Ticket (${response.ticketId}) submitted successfully! Our support team will review it.`;
+                msgEl.innerText = `✅ Ticket (${response.ticketId}) submitted successfully!`;
                 document.getElementById('support-message').value = '';
             } else {
                 msgEl.className = "error-msg";
-                msgEl.innerText = "❌ Failed to submit ticket. Please try again.";
+                msgEl.innerText = "❌ Failed to submit ticket.";
             }
         });
     }
@@ -944,16 +942,14 @@
 
     function showTransactionHistory() {
         switchScreen('transaction-history-screen');
-        
         let users = JSON.parse(localStorage.getItem('emoji_users_secure') || '{}');
         let userObj = users[currentUser] || {};
         let transactions = userObj.transactions || [];
-        
         const container = document.getElementById('transaction-container');
         container.innerHTML = '';
 
         if (transactions.length === 0) {
-            container.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 20px;">No transactions found yet. Play a game or fund your wallet to get started!</div>`;
+            container.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 20px;">No transactions found yet.</div>`;
             return;
         }
 
@@ -1022,12 +1018,10 @@
     function renderAdminIncomeHistory(incomeLogs) {
         const container = document.getElementById('admin-income-history-container');
         container.innerHTML = '';
-
         if (incomeLogs.length === 0) {
             container.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 10px; font-size: 0.75rem;">No income commission recorded yet.</div>`;
             return;
         }
-
         incomeLogs.forEach(log => {
             const item = document.createElement('div');
             item.classList.add('leaderboard-item');
@@ -1037,9 +1031,7 @@
                     <span style="font-size: 0.7rem; color: #94a3b8;">${log.description}</span><br>
                     <span style="font-size: 0.65rem; color: #64748b;">${log.date}</span>
                 </div>
-                <div style="text-align: right; color: #10b981; font-weight: bold;">
-                    +₦${log.amount.toLocaleString()}
-                </div>
+                <div style="text-align: right; color: #10b981; font-weight: bold;">+₦${log.amount.toLocaleString()}</div>
             `;
             container.appendChild(item);
         });
@@ -1048,12 +1040,10 @@
     function renderAdminWithdrawalHistory(withdrawalLogs) {
         const container = document.getElementById('admin-withdrawal-history-container');
         container.innerHTML = '';
-
         if (withdrawalLogs.length === 0) {
             container.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 10px; font-size: 0.75rem;">No admin withdrawal history yet.</div>`;
             return;
         }
-
         withdrawalLogs.forEach(log => {
             const item = document.createElement('div');
             item.classList.add('leaderboard-item');
@@ -1063,9 +1053,7 @@
                     <span style="font-size: 0.7rem; color: #94a3b8;">To ${log.bankName} (${log.accountNumber})</span><br>
                     <span style="font-size: 0.65rem; color: #64748b;">${log.date}</span>
                 </div>
-                <div style="text-align: right; color: #f43f5e; font-weight: bold;">
-                    -₦${log.amount.toLocaleString()}
-                </div>
+                <div style="text-align: right; color: #f43f5e; font-weight: bold;">-₦${log.amount.toLocaleString()}</div>
             `;
             container.appendChild(item);
         });
@@ -1076,12 +1064,10 @@
             let tickets = response && response.tickets ? response.tickets : [];
             const container = document.getElementById('admin-support-container');
             container.innerHTML = '';
-
             if (tickets.length === 0) {
                 container.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 10px; font-size: 0.75rem;">No support tickets received.</div>`;
                 return;
             }
-
             tickets.forEach(ticket => {
                 let statusColor = ticket.status === 'Resolved' ? '#10b981' : '#facc15';
                 const item = document.createElement('div');
@@ -1173,44 +1159,20 @@
             return;
         }
 
-        msgEl.className = "success-msg";
-        msgEl.innerText = "⏳ Processing automated payout transfer...";
-
-        fetch('/process-payout', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ amount, bankCode, accountNumber: accountNum, accountName })
-        })
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                socket.emit('admin_withdraw', {
-                    username: currentUser,
-                    amount: amount,
-                    bankName: bankName,
-                    accountNumber: accountNum
-                }, (response) => {
-                    if (response && response.success) {
-                        msgEl.className = "success-msg";
-                        msgEl.innerText = `✅ Payout successful! ₦${amount.toLocaleString()} sent to ${bankName}.`;
-                        document.getElementById('admin-house-balance').innerText = `₦${response.newRevenue.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
-                        
-                        document.getElementById('admin-withdraw-amount').value = '';
-                        document.getElementById('admin-account-number').value = '';
-                        document.getElementById('account-verification-box').style.display = 'none';
-                        document.getElementById('admin-withdraw-btn').disabled = true;
-                        
-                        setTimeout(() => { showAdminDashboard(); }, 1500);
-                    }
-                });
+        socket.emit('admin_withdraw', {
+            username: currentUser,
+            amount: amount,
+            bankName: bankName,
+            accountNumber: accountNum
+        }, (response) => {
+            if (response && response.success) {
+                msgEl.className = "success-msg";
+                msgEl.innerText = `✅ Withdrawal recorded successfully!`;
+                setTimeout(() => { showAdminDashboard(); }, 1500);
             } else {
                 msgEl.className = "error-msg";
-                msgEl.innerText = `❌ Payout failed: ${data.message}`;
+                msgEl.innerText = `❌ Withdrawal failed: ${response.message}`;
             }
-        })
-        .catch(() => {
-            msgEl.className = "error-msg";
-            msgEl.innerText = "❌ Network error processing payout.";
         });
     }
 
@@ -1461,7 +1423,7 @@
                     document.getElementById('auth-action-container').style.display = 'none';
                     document.getElementById('otp-fields').style.display = 'block';
                     document.getElementById('auth-subtitle').innerText = "Email Verification";
-                    document.getElementById('otp-hint-box').innerHTML = `✉️️ Verification code sent to <strong>${contact}</strong>`;
+                    document.getElementById('otp-hint-box').innerHTML = `✉ Verification code sent to <strong>${contact}</strong>`;
                     msgEl.innerText = "";
                 } else {
                     msgEl.innerText = response ? response.message : "Failed to send email OTP.";
@@ -1574,4 +1536,349 @@
     }
 
     function saveUserData(updatedUserObj) {
-        let users
+        let users = getUsers();
+        if (users[currentUser]) {
+            users[currentUser] = updatedUserObj;
+            localStorage.setItem('emoji_users_secure', JSON.stringify(users));
+        }
+    }
+
+    function getCurrentUserObj() {
+        let users = getUsers();
+        let obj = users[currentUser] || { balance: 0, totalWins: 0, totalWon: 0, country: "Nigeria", transactions: [] };
+        if (!obj.transactions) obj.transactions = [];
+        return obj;
+    }
+
+    function updateLobbyWallet() {
+        let userObj = getCurrentUserObj();
+        let userEmail = userObj.contact || "";
+
+        socket.emit('get_balance', { email: userEmail, username: currentUser }, (response) => {
+            if (response && response.success) {
+                userObj.balance = response.balance;
+                saveUserData(userObj);
+                document.getElementById('lobby-wallet-balance').innerText = `₦${response.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
+                let cashierBal = document.getElementById('cashier-wallet-balance');
+                if (cashierBal) {
+                    cashierBal.innerText = `₦${response.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
+                }
+            }
+        });
+    }
+
+    function updateWalletDisplay() {
+        let userObj = getCurrentUserObj();
+        document.getElementById('wallet-balance').innerText = `₦${userObj.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
+    }
+
+    function showWalletCashier() {
+        switchScreen('wallet-screen');
+        updateLobbyWallet();
+        let userObj = getCurrentUserObj();
+        document.getElementById('cashier-wallet-balance').innerText = `₦${userObj.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
+        document.getElementById('deposit-msg').innerHTML = '';
+        document.getElementById('withdraw-msg').innerHTML = '';
+        document.getElementById('account-number').value = '';
+        document.getElementById('player-verification-box').style.display = 'none';
+        document.getElementById('player-withdraw-btn').disabled = true;
+        document.getElementById('player-withdraw-btn').style.opacity = '0.5';
+        document.getElementById('player-withdraw-btn').style.cursor = 'not-allowed';
+    }
+
+    function switchWalletTab(tab) {
+        const depBtn = document.getElementById('tab-deposit-btn');
+        const wthBtn = document.getElementById('tab-withdraw-btn');
+        const depForm = document.getElementById('deposit-form');
+        const wthForm = document.getElementById('withdraw-form');
+
+        if (tab === 'deposit') {
+            depBtn.classList.add('active');
+            wthBtn.classList.remove('active');
+            depForm.classList.add('active');
+            wthForm.classList.remove('active');
+        } else {
+            wthBtn.classList.add('active');
+            depBtn.classList.remove('active');
+            wthForm.classList.add('active');
+            depForm.classList.remove('active');
+        }
+    }
+
+    function processDeposit() {
+        const amount = parseFloat(document.getElementById('deposit-amount').value);
+        const msgEl = document.getElementById('deposit-msg');
+
+        if (isNaN(amount) || amount < 100) {
+            msgEl.className = "error-msg";
+            msgEl.innerText = "Please enter a valid deposit amount (Minimum ₦100).";
+            return;
+        }
+
+        let userObj = getCurrentUserObj();
+        let userEmail = userObj.contact || "player@emojitreasurehunt.com";
+
+        msgEl.className = "success-msg";
+        msgEl.innerText = "⏳ Initializing secure Paystack checkout...";
+
+        fetch('/initialize-payment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: userEmail, amount: amount })
+        })
+        .then(res => res.json())
+        .then(result => {
+            if (result.success && result.data && result.data.authorization_url) {
+                msgEl.innerText = "⏳ Opening Paystack secure checkout...";
+                window.location.href = result.data.authorization_url;
+            } else {
+                msgEl.className = "error-msg";
+                msgEl.innerText = "❌ Failed to initialize payment from server.";
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            msgEl.className = "error-msg";
+            msgEl.innerText = "❌ Network error communicating with server.";
+        });
+    }
+
+    function processWithdrawal() {
+        const amount = parseFloat(document.getElementById('withdraw-amount').value);
+        const bankSelect = document.getElementById('bank-name');
+        const bankCode = bankSelect.value;
+        const bankName = bankSelect.options[bankSelect.selectedIndex].text;
+        const accountNum = document.getElementById('account-number').value.trim();
+        const accountName = document.getElementById('player-verified-name').innerText;
+        const msgEl = document.getElementById('withdraw-msg');
+
+        let userObj = getCurrentUserObj();
+
+        if (isNaN(amount) || amount <= 0) {
+            msgEl.className = "error-msg";
+            msgEl.innerText = "Please enter a valid withdrawal amount.";
+            return;
+        }
+
+        if (amount > userObj.balance) {
+            msgEl.className = "error-msg";
+            msgEl.innerText = "Insufficient wallet balance for this withdrawal.";
+            return;
+        }
+
+        if (!bankCode || accountNum.length < 10) {
+            msgEl.className = "error-msg";
+            msgEl.innerText = "Please select a bank and enter a valid 10-digit account number.";
+            return;
+        }
+
+        msgEl.className = "success-msg";
+        msgEl.innerText = "⏳ Processing manual withdrawal request...";
+
+        socket.emit('request_withdrawal', {
+            username: currentUser,
+            amount: amount,
+            bankName: bankName,
+            accountNumber: accountNum,
+            accountName: accountName
+        }, (response) => {
+            if (response && response.success) {
+                userObj.balance -= amount;
+                addTransaction(userObj, 'WITHDRAWAL', amount, `Requested withdrawal to ${bankName} (${accountNum})`);
+                saveUserData(userObj);
+
+                document.getElementById('cashier-wallet-balance').innerText = `₦${userObj.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
+                msgEl.className = "success-msg";
+                msgEl.innerText = `✅ ${response.message}`;
+                document.getElementById('withdraw-amount').value = '';
+                document.getElementById('account-number').value = '';
+                document.getElementById('player-verification-box').style.display = 'none';
+                document.getElementById('player-withdraw-btn').disabled = true;
+                document.getElementById('player-withdraw-btn').style.opacity = '0.5';
+            } else {
+                msgEl.className = "error-msg";
+                msgEl.innerText = `❌ Withdrawal failed: ${response.message}`;
+            }
+        });
+    }
+
+    function returnToLobbyFromWallet() {
+        switchScreen('lobby-screen');
+        updateLobbyWallet();
+    }
+
+    function showChangePasswordScreen() {
+        switchScreen('change-password-screen');
+        document.getElementById('old-password').value = '';
+        document.getElementById('new-password').value = '';
+        document.getElementById('change-pwd-msg').innerText = '';
+    }
+
+    function executeChangePassword() {
+        const oldPwd = document.getElementById('old-password').value.trim();
+        const newPwd = document.getElementById('new-password').value.trim();
+        const msgEl = document.getElementById('change-pwd-msg');
+
+        socket.emit('change_password', { username: currentUser, oldPassword: oldPwd, newPassword: newPwd }, (response) => {
+            if (response && response.success) {
+                msgEl.className = "success-msg";
+                msgEl.innerText = "✅ Password updated successfully!";
+                document.getElementById('old-password').value = '';
+                document.getElementById('new-password').value = '';
+            } else {
+                msgEl.className = "error-msg";
+                msgEl.innerText = response ? response.message : "Failed to update password.";
+            }
+        });
+    }
+
+    function returnToLobby() {
+        if (gameActive) {
+            alert("⚠️ You cannot leave the room while an active match is in progress!");
+            return;
+        }
+
+        if (selectedStake > 0) {
+            socket.emit('leave_queue', { username: currentUser });
+            let userObj = getCurrentUserObj();
+            userObj.balance += selectedStake;
+            addTransaction(userObj, 'REFUND', selectedStake, `Cancelled queue for ${selectedGroupName}`);
+            saveUserData(userObj);
+            selectedStake = 0;
+        }
+
+        clearInterval(timerInterval);
+        switchScreen('lobby-screen');
+        updateLobbyWallet();
+    }
+
+    function showLeaderboard() {
+        switchScreen('leaderboard-screen');
+        let users = getUsers();
+        let userArray = Object.keys(users).map(username => ({
+            username: username,
+            totalWins: users[username].totalWins || 0,
+            totalWon: users[username].totalWon || 0
+        }));
+
+        let mockHunters = [
+            { username: "AlexHunter", totalWins: 42, totalWon: 35000.00 },
+            { username: "Sarah_G", totalWins: 38, totalWon: 28500.00 },
+            { username: "CryptoKing99", totalWins: 31, totalWon: 21000.00 },
+            { username: "FastFingers", totalWins: 25, totalWon: 17500.00 },
+            { username: "LuckyStrike", totalWins: 22, totalWon: 14000.00 }
+        ];
+
+        userArray.forEach(ua => {
+            if (!mockHunters.some(mh => mh.username === ua.username)) {
+                mockHunters.push(ua);
+            } else {
+                let existing = mockHunters.find(mh => mh.username === ua.username);
+                existing.totalWins = ua.totalWins;
+                existing.totalWon = ua.totalWon;
+            }
+        });
+
+        mockHunters.sort((a, b) => b.totalWins - a.totalWins);
+        const top20 = mockHunters.slice(0, 20);
+        const container = document.getElementById('leaderboard-container');
+        container.innerHTML = '';
+
+        top20.forEach((user, index) => {
+            let rankClass = '';
+            let medal = `#${index + 1}`;
+            if (index === 0) { rankClass = 'rank-1'; medal = '🥇 1st'; }
+            else if (index === 1) { rankClass = 'rank-2'; medal = '🥈 2nd'; }
+            else if (index === 2) { rankClass = 'rank-3'; medal = '🥉 3rd'; }
+
+            const item = document.createElement('div');
+            item.classList.add('leaderboard-item');
+            item.innerHTML = `
+                <div>
+                    <span class="${rankClass}">${medal}</span> 
+                    <strong>${user.username}</strong>
+                </div>
+                <div style="text-align: right; color: #38bdf8;">
+                    <strong>${user.totalWins} Wins</strong><br>
+                    <span style="font-size: 0.75rem; color: #94a3b8;">₦${user.totalWon.toLocaleString()}</span>
+                </div>
+            `;
+            container.appendChild(item);
+        });
+    }
+
+    function returnToLobbyFromLeaderboard() {
+        switchScreen('lobby-screen');
+        updateLobbyWallet();
+    }
+
+    function selectBox(index, boxEl) {
+        if (!gameActive || !isMyTurn) return;
+
+        boxEl.classList.add('revealed');
+        const messageEl = document.getElementById('message');
+        let userObj = getCurrentUserObj();
+        
+        if (index === treasureIndex) {
+            boxEl.innerText = currentTreasureEmoji;
+            let totalPool = selectedStake * 2;
+            let platformFee = 15; 
+            let netWinnings = totalPool - platformFee; 
+            
+            userObj.balance += netWinnings;
+            userObj.totalWins = (userObj.totalWins || 0) + 1;
+            userObj.totalWon = (userObj.totalWon || 0) + (netWinnings - selectedStake);
+            addTransaction(userObj, 'WIN', netWinnings, `Won ${selectedGroupName} treasure pool`);
+            saveUserData(userObj);
+            
+            socket.emit('player_won', {
+                roomId: currentRoomId,
+                winner: currentUser
+            });
+
+            gameActive = false;
+            selectedStake = 0;
+            clearInterval(timerInterval);
+            messageEl.innerHTML = `🎉 YOU FOUND IT! Won ₦${netWinnings.toLocaleString()} total credited in the ${selectedGroupName} (₦15 fee applied).`;
+            document.getElementById('turn-indicator').innerText = "Victory!";
+        } else {
+            let randomDecoy = decoyPool[Math.floor(Math.random() * decoyPool.length)];
+            boxEl.innerText = randomDecoy;
+            boxEl.disabled = true;
+            messageEl.innerText = "Wrong box! Turn passing to opponent...";
+
+            socket.emit('play_turn', {
+                roomId: currentRoomId,
+                username: currentUser,
+                index: index,
+                decoyEmoji: randomDecoy
+            });
+
+            isMyTurn = false;
+            currentTurnPlayer = roomPlayers.find(p => p !== currentUser);
+            turnTimeLeft = 6;
+            updateTurnDisplay();
+
+            const boxes = document.querySelectorAll('.box');
+            boxes.forEach(b => {
+                if (!b.classList.contains('revealed')) {
+                    b.disabled = true;
+                }
+            });
+        }
+    }
+
+    window.onload = function() {
+        loadAllBanks();
+        const savedUser = localStorage.getItem('emoji_current_user_secure');
+        if (savedUser) {
+            let users = getUsers();
+            if (users[savedUser]) {
+                loginUser(savedUser);
+            }
+        }
+    };
+</script>
+
+</body>
+</html>
