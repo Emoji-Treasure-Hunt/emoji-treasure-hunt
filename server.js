@@ -412,7 +412,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Manual Withdrawal Request Handler (Replaces automated transfer API to bypass third-party payout blocks)
+    // Manual Withdrawal Request Handler with Flexible User Lookup Fallback
     socket.on('request_withdrawal', async (data, callback) => {
         const { username, amount, bankName, accountNumber, accountName } = data;
 
@@ -424,32 +424,34 @@ io.on('connection', (socket) => {
         try {
             await client.query('BEGIN');
 
-            // 1. Check user balance in PostgreSQL
-            const userRes = await client.query('SELECT balance FROM users WHERE username = $1', [username]);
+            // Flexible lookup supporting both username and email fallback
+            let userRes = await client.query('SELECT * FROM users WHERE username = $1 OR email = $1', [username]);
             if (userRes.rows.length === 0) {
                 await client.query('ROLLBACK');
-                return callback({ success: false, message: 'User not found.' });
+                return callback({ success: false, message: `User '${username}' not found. Please log out and log back in.` });
             }
 
-            const currentBalance = parseFloat(userRes.rows[0].balance);
+            const dbUser = userRes.rows[0];
+            const currentBalance = parseFloat(dbUser.balance);
+
             if (currentBalance < amount) {
                 await client.query('ROLLBACK');
                 return callback({ success: false, message: 'Insufficient wallet balance.' });
             }
 
-            // 2. Deduct balance from user wallet
-            await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [amount, username]);
+            // Deduct balance from user wallet using the verified database username
+            await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [amount, dbUser.username]);
 
-            // 3. Save withdrawal request into the withdrawals table
+            // Save withdrawal request into the withdrawals table
             await client.query(
                 'INSERT INTO withdrawals (username, amount, bank_name, account_number, account_name, status) VALUES ($1, $2, $3, $4, $5, $6)',
-                [username, amount, bankName, accountNumber, accountName, 'Pending']
+                [dbUser.username, amount, bankName, accountNumber, accountName, 'Pending']
             );
 
-            // 4. Log transaction
+            // Log transaction
             await client.query(
-                'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
-                ['WITHDRAWAL', amount, `Manual withdrawal request to ${bankName} (${accountNumber})`, username]
+                'INSERT INTO transactions (email, type, amount, description) VALUES ($1, $2, $3, $4)',
+                [dbUser.email, 'WITHDRAWAL', amount, `Manual withdrawal request to ${bankName} (${accountNumber})`]
             );
 
             await client.query('COMMIT');
