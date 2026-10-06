@@ -23,6 +23,30 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 let otpStorage = {};
 
 // ==========================================
+// INITIALIZE DATABASE TABLES (Withdrawals & Users)
+// ==========================================
+async function initDB() {
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS withdrawals (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(255) NOT NULL,
+                amount DECIMAL(12, 2) NOT NULL,
+                bank_name VARCHAR(255) NOT NULL,
+                account_number VARCHAR(50) NOT NULL,
+                account_name VARCHAR(255) NOT NULL,
+                status VARCHAR(50) DEFAULT 'Pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log("Database tables verified/created successfully.");
+    } catch (err) {
+        console.error("Error initializing database tables:", err);
+    }
+}
+initDB();
+
+// ==========================================
 // 1. SECURE PAYSTACK WEBHOOK ROUTE (Must be before express.json)
 // ==========================================
 app.post('/paystack-webhook', express.raw({ type: 'application/json' }), async (req, res) => {
@@ -109,7 +133,7 @@ app.get('/reset-db-temp', async (req, res) => {
     }
 });
 
-// Payment Initialization Route for Paystack
+// Payment Initialization Route for Paystack (Deposits remain automated)
 app.post('/initialize-payment', (req, res) => {
     const { email, amount } = req.body;
 
@@ -233,89 +257,6 @@ app.post('/verify-bank-account', (req, res) => {
 
     reqPaystack.on('error', () => res.status(500).json({ success: false, message: 'Network error verifying bank.' }));
     reqPaystack.end();
-});
-
-// Process Automated Payout Transfer Route
-app.post('/process-payout', (req, res) => {
-    const { amount, bankCode, accountNumber, accountName } = req.body;
-
-    if (!amount || !bankCode || !accountNumber) {
-        return res.status(400).json({ success: false, message: 'Missing payout parameters.' });
-    }
-
-    const recipientParams = JSON.stringify({
-        type: 'nuban',
-        name: accountName,
-        account_number: accountNumber,
-        bank_code: bankCode,
-        currency: 'NGN'
-    });
-
-    const recipientOptions = {
-        hostname: 'api.paystack.co',
-        port: 443,
-        path: '/transferrecipient',
-        method: 'POST',
-        headers: {
-            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-            'Content-Type': 'application/json'
-        }
-    };
-
-    const recipientReq = https.request(recipientOptions, recipientRes => {
-        let recData = '';
-        recipientRes.on('data', chunk => recData += chunk);
-        recipientRes.on('end', () => {
-            try {
-                const recResponse = JSON.parse(recData);
-                if (!recResponse.status) {
-                    return res.status(400).json({ success: false, message: 'Failed to create transfer recipient.' });
-                }
-
-                const recipientCode = recResponse.data.recipient_code;
-
-                const transferParams = JSON.stringify({
-                    source: 'balance',
-                    amount: amount * 100,
-                    recipient: recipientCode,
-                    reason: 'Emoji Treasure Hunt Withdrawal'
-                });
-
-                const transferOptions = {
-                    hostname: 'api.paystack.co',
-                    port: 443,
-                    path: '/transfer',
-                    method: 'POST',
-                    headers: {
-                        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-                        'Content-Type': 'application/json'
-                    }
-                };
-
-                const transferReq = https.request(transferOptions, transferRes => {
-                    let transData = '';
-                    transferRes.on('data', chunk => transData += chunk);
-                    transferRes.on('end', () => {
-                        const transResponse = JSON.parse(transData);
-                        if (transResponse.status) {
-                            res.json({ success: true, message: 'Transfer queued successfully by Paystack.' });
-                        } else {
-                            res.status(400).json({ success: false, message: transResponse.message || 'Transfer failed.' });
-                        }
-                    });
-                });
-
-                transferReq.write(transferParams);
-                transferReq.end();
-
-            } catch (e) {
-                res.status(500).json({ success: false, message: 'Error processing transfer request.' });
-            }
-        });
-    });
-
-    recipientReq.write(recipientParams);
-    recipientReq.end();
 });
 
 // In-Memory Game State Variables (Rooms & Match queues remain in-memory for active socket gameplay speed)
@@ -468,6 +409,80 @@ io.on('connection', (socket) => {
         } catch (err) {
             console.error('Password change error:', err);
             callback({ success: false, message: 'Server error updating password.' });
+        }
+    });
+
+    // Manual Withdrawal Request Handler (Replaces automated transfer API to bypass third-party payout blocks)
+    socket.on('request_withdrawal', async (data, callback) => {
+        const { username, amount, bankName, accountNumber, accountName } = data;
+
+        if (!username || !amount || !bankName || !accountNumber) {
+            return callback({ success: false, message: 'Missing withdrawal parameters.' });
+        }
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            // 1. Check user balance in PostgreSQL
+            const userRes = await client.query('SELECT balance FROM users WHERE username = $1', [username]);
+            if (userRes.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return callback({ success: false, message: 'User not found.' });
+            }
+
+            const currentBalance = parseFloat(userRes.rows[0].balance);
+            if (currentBalance < amount) {
+                await client.query('ROLLBACK');
+                return callback({ success: false, message: 'Insufficient wallet balance.' });
+            }
+
+            // 2. Deduct balance from user wallet
+            await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [amount, username]);
+
+            // 3. Save withdrawal request into the withdrawals table
+            await client.query(
+                'INSERT INTO withdrawals (username, amount, bank_name, account_number, account_name, status) VALUES ($1, $2, $3, $4, $5, $6)',
+                [username, amount, bankName, accountNumber, accountName, 'Pending']
+            );
+
+            // 4. Log transaction
+            await client.query(
+                'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
+                ['WITHDRAWAL', amount, `Manual withdrawal request to ${bankName} (${accountNumber})`, username]
+            );
+
+            await client.query('COMMIT');
+            callback({ success: true, message: 'Withdrawal request submitted successfully! Pending admin fulfillment.' });
+        } catch (err) {
+            await client.query('ROLLBACK');
+            console.error('Manual withdrawal error:', err);
+            callback({ success: false, message: 'Server error processing withdrawal.' });
+        } finally {
+            client.release();
+        }
+    });
+
+    // Fetch pending manual withdrawals for admin review
+    socket.on('get_pending_withdrawals', async (callback) => {
+        try {
+            const result = await pool.query("SELECT * FROM withdrawals WHERE status = 'Pending' ORDER BY created_at ASC");
+            callback({ success: true, withdrawals: result.rows });
+        } catch (err) {
+            console.error('Error fetching pending withdrawals:', err);
+            callback({ success: false, message: 'Error fetching withdrawal requests.' });
+        }
+    });
+
+    // Mark manual withdrawal as fulfilled/paid by admin
+    socket.on('complete_withdrawal', async (data, callback) => {
+        const { withdrawalId } = data;
+        try {
+            await pool.query("UPDATE withdrawals SET status = 'Completed' WHERE id = $1", [withdrawalId]);
+            callback({ success: true, message: 'Withdrawal marked as completed.' });
+        } catch (err) {
+            console.error('Error completing withdrawal:', err);
+            callback({ success: false, message: 'Error updating withdrawal status.' });
         }
     });
 
