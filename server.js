@@ -350,3 +350,365 @@ io.on('connection', (socket) => {
             if (email) {
                 result = await pool.query('SELECT balance FROM users WHERE email = $1', [email]);
             }
+            if ((!result || result.rows.length === 0) && username) {
+                result = await pool.query('SELECT balance FROM users WHERE username = $1', [username]);
+            }
+            const balance = result && result.rows.length > 0 ? parseFloat(result.rows[0].balance) : 0;
+            callback({ success: true, balance });
+        } catch (err) {
+            console.error("Error fetching balance from DB:", err);
+            callback({ success: false, balance: 0 });
+        }
+    });
+
+    // Handle sending Email Verification OTP via Resend
+    socket.on('send_email_otp', async (data, callback) => {
+        const { email } = data;
+        if (!email) {
+            return callback({ success: false, message: 'Email address is required.' });
+        }
+
+        const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+        otpStorage[email] = verificationCode;
+
+        try {
+            const emailResult = await resend.emails.send({
+                from: 'Emoji Treasure Hunt <onboarding@resend.dev>',
+                to: [email],
+                subject: 'Verify Your Email Address',
+                html: `
+                    <div style="font-family: Arial, sans-serif; padding: 20px;">
+                        <h2>Welcome to Emoji Treasure Hunt!</h2>
+                        <p>Your verification code is:</p>
+                        <h1 style="color: #4F46E5; letter-spacing: 2px;">${verificationCode}</h1>
+                        <p>Please enter this code in the app to complete your verification.</p>
+                    </div>
+                `
+            });
+
+            if (emailResult.error) {
+                console.error('Resend API Error:', emailResult.error);
+                return callback({ success: false, message: emailResult.error.message || 'Failed to dispatch email.' });
+            }
+
+            console.log(`Verification code sent to ${email}`);
+            callback({ success: true, message: 'Verification code sent successfully!' });
+        } catch (err) {
+            console.error('Failed to dispatch verification email:', err);
+            callback({ success: false, message: 'Server error sending verification email.' });
+        }
+    });
+
+    // Handle verifying OTP code entered by the user
+    socket.on('verify_email_otp', (data, callback) => {
+        const { email, enteredOtp } = data;
+        if (otpStorage[email] && otpStorage[email] === enteredOtp) {
+            delete otpStorage[email]; // clear code after successful use
+            callback({ success: true });
+        } else {
+            callback({ success: false, message: 'Invalid or expired verification code.' });
+        }
+    });
+
+    // 1. Database-backed User Registration Handler with Bulletproof Email Mapping
+    socket.on('register_user', async (data, callback) => {
+        const username = data ? data.username : null;
+        const email = data ? (data.email || data.contact) : null;
+        const password = data ? data.password : null;
+
+        if (!username || !email || !password) {
+            return callback({ success: false, message: 'Missing required registration fields.' });
+        }
+
+        try {
+            const existing = await pool.query('SELECT id FROM users WHERE username = $1 OR email = $2', [username, email]);
+            if (existing.rows.length > 0) {
+                return callback({ success: false, message: 'Username or email already exists.' });
+            }
+
+            await pool.query(
+                `INSERT INTO users (username, email, password, balance) VALUES ($1, $2, $3, 0.00)`,
+                [username, email, password]
+            );
+
+            callback({ success: true, message: 'Registration successful!' });
+        } catch (err) {
+            console.error('Registration error details:', err);
+            callback({ success: false, message: 'Server error during registration.' });
+        }
+    });
+
+    // 2. Database-backed User Login Handler
+    socket.on('login_user', async (data, callback) => {
+        const { username, password } = data;
+        try {
+            const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+            if (result.rows.length === 0) {
+                return callback({ success: false, message: 'Invalid username or password.' });
+            }
+
+            const user = result.rows[0];
+            if (user.password !== password) {
+                return callback({ success: false, message: 'Invalid username or password.' });
+            }
+
+            callback({ 
+                success: true, 
+                user: { 
+                    username: user.username, 
+                    email: user.email, 
+                    balance: parseFloat(user.balance) 
+                } 
+            });
+        } catch (err) {
+            console.error('Login error:', err);
+            callback({ success: false, message: 'Server error during login.' });
+        }
+    });
+
+    // 3. Database-backed Change Password Handler
+    socket.on('change_password', async (data, callback) => {
+        const { username, oldPassword, newPassword } = data;
+        try {
+            const result = await pool.query('SELECT password FROM users WHERE username = $1', [username]);
+            if (result.rows.length === 0 || result.rows[0].password !== oldPassword) {
+                return callback({ success: false, message: 'Current password is incorrect.' });
+            }
+
+            await pool.query('UPDATE users SET password = $1 WHERE username = $2', [newPassword, username]);
+            callback({ success: true, message: 'Password updated successfully!' });
+        } catch (err) {
+            console.error('Password change error:', err);
+            callback({ success: false, message: 'Server error updating password.' });
+        }
+    });
+
+    // Manual Withdrawal Request Handler with Flexible User Lookup Fallback
+    socket.on('request_withdrawal', async (data, callback) => {
+        const { username, amount, bankName, accountNumber, accountName } = data;
+
+        if (!username || !amount || !bankName || !accountNumber) {
+            return callback({ success: false, message: 'Missing withdrawal parameters.' });
+        }
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            let userRes = await client.query('SELECT * FROM users WHERE username = $1 OR email = $1', [username]);
+            if (userRes.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return callback({ success: false, message: `User '${username}' not found. Please log out and log back in.` });
+            }
+
+            const dbUser = userRes.rows[0];
+            const currentBalance = parseFloat(dbUser.balance);
+
+            if (currentBalance < amount) {
+                await client.query('ROLLBACK');
+                return callback({ success: false, message: 'Insufficient wallet balance.' });
+            }
+
+            await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [amount, dbUser.username]);
+
+            await client.query(
+                'INSERT INTO withdrawals (username, amount, bank_name, account_number, account_name, status) VALUES ($1, $2, $3, $4, $5, $6)',
+                [dbUser.username, amount, bankName, accountNumber, accountName, 'Pending']
+            );
+
+            await client.query(
+                'INSERT INTO transactions (email, type, amount, description) VALUES ($1, $2, $3, $4)',
+                [dbUser.email, 'WITHDRAWAL', amount, `Manual withdrawal request to ${bankName} (${accountNumber})`]
+            );
+
+            await client.query('COMMIT');
+            callback({ success: true, message: 'Withdrawal request submitted successfully! Pending admin fulfillment.' });
+        } catch (err) {
+            await client.query('ROLLBACK');
+            console.error('Manual withdrawal error:', err);
+            callback({ success: false, message: 'Server error processing withdrawal.' });
+        } finally {
+            client.release();
+        }
+    });
+
+    // Fetch pending manual withdrawals for admin review
+    socket.on('get_pending_withdrawals', async (callback) => {
+        try {
+            const result = await pool.query("SELECT * FROM withdrawals WHERE status = 'Pending' ORDER BY created_at ASC");
+            callback({ success: true, withdrawals: result.rows });
+        } catch (err) {
+            console.error('Error fetching pending withdrawals:', err);
+            callback({ success: false, message: 'Error fetching withdrawal requests.' });
+        }
+    });
+
+    // Mark manual withdrawal as fulfilled/paid by admin
+    socket.on('complete_withdrawal', async (data, callback) => {
+        const { withdrawalId } = data;
+        try {
+            await pool.query("UPDATE withdrawals SET status = 'Completed' WHERE id = $1", [withdrawalId]);
+            callback({ success: true, message: 'Withdrawal marked as completed.' });
+        } catch (err) {
+            console.error('Error completing withdrawal:', err);
+            callback({ success: false, message: 'Error updating withdrawal status.' });
+        }
+    });
+
+    // Reject manual withdrawal and refund funds back to the user's wallet
+    socket.on('deny_withdrawal', async (data, callback) => {
+        const { withdrawalId } = data;
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            const wRes = await client.query("SELECT * FROM withdrawals WHERE id = $1 AND status = 'Pending'", [withdrawalId]);
+            if (wRes.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return callback({ success: false, message: 'Withdrawal request not found or already processed.' });
+            }
+
+            const withdrawal = wRes.rows[0];
+            const { username, amount } = withdrawal;
+
+            await client.query("UPDATE withdrawals SET status = 'Denied' WHERE id = $1", [withdrawalId]);
+            await client.query('UPDATE users SET balance = balance + $1 WHERE username = $2', [amount, username]);
+
+            await client.query(
+                'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
+                ['REFUND', amount, `Refunded denied withdrawal #${withdrawalId}`, username]
+            );
+
+            await client.query('COMMIT');
+            callback({ success: true, message: 'Withdrawal denied and funds refunded to player balance.' });
+        } catch (err) {
+            await client.query('ROLLBACK');
+            console.error('Error denying withdrawal:', err);
+            callback({ success: false, message: 'Server error processing denial.' });
+        } finally {
+            client.release();
+        }
+    });
+
+    socket.on('join_queue', (data) => {
+        const { username, stake } = data;
+        
+        waitingPlayers = waitingPlayers.filter(p => p.username !== username);
+        waitingPlayers.push({ socketId: socket.id, username, stake });
+
+        if (waitingPlayers.length >= 2) {
+            const player1 = waitingPlayers.shift();
+            const player2 = waitingPlayers.shift();
+
+            const roomId = 'room_' + Date.now();
+            const targetEmojis = ['💎', '🔑', '👑', '🪙', '🏆'];
+            const targetEmoji = targetEmojis[Math.floor(Math.random() * targetEmojis.length)];
+            const winningIndex = Math.floor(Math.random() * 40);
+
+            activeRooms[roomId] = {
+                players: [player1.username, player2.username],
+                stake: player1.stake,
+                targetEmoji,
+                winningIndex,
+                turn: player1.username
+            };
+
+            io.to(player1.socketId).emit('match_found', { roomId, players: [player1.username, player2.username], targetEmoji, winningIndex });
+            io.to(player2.socketId).emit('match_found', { roomId, players: [player1.username, player2.username], targetEmoji, winningIndex });
+        }
+    });
+
+    socket.on('play_turn', (data) => {
+        const { roomId, username, index, decoyEmoji } = data;
+        const room = activeRooms[roomId];
+        if (room) {
+            socket.broadcast.emit('opponent_played', { index, decoyEmoji });
+        }
+    });
+
+    socket.on('player_won', (data) => {
+        const { roomId, winner } = data;
+        const room = activeRooms[roomId];
+        if (room) {
+            let houseCut = 15;
+            houseRevenue += houseCut;
+            
+            incomeLogs.unshift({
+                type: 'COMMISSION',
+                description: `₦15 flat fee from ${room.stake * 2} pool match`,
+                amount: houseCut,
+                date: new Date().toLocaleString()
+            });
+
+            io.emit('game_over', { winner });
+            delete activeRooms[roomId];
+        }
+    });
+
+    socket.on('leave_queue', (data) => {
+        const { username } = data;
+        waitingPlayers = waitingPlayers.filter(p => p.username !== username);
+    });
+
+    socket.on('get_house_revenue', (callback) => {
+        callback({
+            revenue: houseRevenue,
+            incomeLogs: incomeLogs,
+            withdrawalLogs: withdrawalLogs
+        });
+    });
+
+    socket.on('admin_withdraw', (data, callback) => {
+        const { amount, bankName, accountNumber } = data;
+        if (amount > houseRevenue) {
+            callback({ success: false, message: 'Insufficient house revenue balance.' });
+            return;
+        }
+
+        houseRevenue -= amount;
+        withdrawalLogs.unshift({
+            amount,
+            bankName,
+            accountNumber,
+            date: new Date().toLocaleString()
+        });
+
+        callback({ success: true, message: `Successfully withdrew ₦${amount.toLocaleString()} to ${bankName} (${accountNumber})`, newRevenue: houseRevenue });
+    });
+
+    socket.on('submit_support_ticket', (data, callback) => {
+        const ticketId = 'TICK_' + Math.floor(1000 + Math.random() * 9000);
+        supportTickets.unshift({
+            id: ticketId,
+            username: data.username,
+            category: data.category,
+            message: data.message,
+            status: 'Pending',
+            date: new Date().toLocaleString()
+        });
+        callback({ success: true, ticketId });
+    });
+
+    socket.on('get_support_tickets', (callback) => {
+        callback({ tickets: supportTickets });
+    });
+
+    socket.on('resolve_ticket', (ticketId, callback) => {
+        const ticket = supportTickets.find(t => t.id === ticketId);
+        if (ticket) {
+            ticket.status = 'Resolved';
+            callback({ success: true });
+        } else {
+            callback({ success: false });
+        }
+    });
+
+    socket.on('disconnect', () => {
+        waitingPlayers = waitingPlayers.filter(p => p.socketId !== socket.id);
+    });
+});
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`Server running live with PostgreSQL connected on port ${PORT}`);
+});
