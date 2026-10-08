@@ -618,34 +618,101 @@ io.on('connection', (socket) => {
                 turn: player1.username
             };
 
-            io.to(player1.socketId).emit('match_found', { roomId, players: [player1.username, player2.username], targetEmoji, winningIndex });
-            io.to(player2.socketId).emit('match_found', { roomId, players: [player1.username, player2.username], targetEmoji, winningIndex });
+            // Join both sockets to the room channel so broadcast room messages work seamlessly
+            const socket1 = io.sockets.sockets.get(player1.socketId);
+            const socket2 = io.sockets.sockets.get(player2.socketId);
+            if (socket1) socket1.join(roomId);
+            if (socket2) socket2.join(roomId);
+
+            io.to(roomId).emit('match_found', { roomId, players: [player1.username, player2.username], targetEmoji, winningIndex });
         }
     });
 
     socket.on('play_turn', (data) => {
-        const { roomId, username, index, decoyEmoji } = data;
+        const { roomId, index, decoyEmoji } = data;
         const room = activeRooms[roomId];
         if (room) {
-            socket.broadcast.emit('opponent_played', { index, decoyEmoji });
+            socket.to(roomId).emit('opponent_played', { index, decoyEmoji });
         }
     });
 
-    socket.on('player_won', (data) => {
+    // Updated player_won event with ₦15 fee deduction and database credit
+    socket.on('player_won', async (data) => {
         const { roomId, winner } = data;
         const room = activeRooms[roomId];
         if (room) {
-            let houseCut = 15;
-            houseRevenue += houseCut;
-            
-            incomeLogs.unshift({
-                type: 'COMMISSION',
-                description: `₦15 flat fee from ${room.stake * 2} pool match`,
-                amount: houseCut,
-                date: new Date().toLocaleString()
-            });
+            const client = await pool.connect();
+            try {
+                await client.query('BEGIN');
 
-            io.emit('game_over', { winner });
+                const stake = room.stake;
+                const totalPool = stake * 2;
+                const houseCut = 15;
+                const netWinnings = totalPool - houseCut;
+
+                // 1. Credit the winner's balance in database
+                await client.query(
+                    'UPDATE users SET balance = balance + $1 WHERE username = $2',
+                    [netWinnings, winner]
+                );
+
+                // 2. Log the WIN transaction for the winner
+                await client.query(
+                    'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
+                    ['WIN', netWinnings, `Won ${stake * 2} pool match (₦15 fee applied)`, winner]
+                );
+
+                // 3. Accumulate house fee
+                houseRevenue += houseCut;
+                incomeLogs.unshift({
+                    type: 'COMMISSION',
+                    description: `₦15 flat fee from ₦${totalPool} pool match`,
+                    amount: houseCut,
+                    date: new Date().toLocaleString()
+                });
+
+                await client.query('COMMIT');
+
+                // Broadcast game over to everyone in the room
+                io.to(roomId).emit('game_over', { winner, reason: 'treasure_found', netWinnings });
+            } catch (err) {
+                await client.query('ROLLBACK');
+                console.error('Error processing winner payout:', err);
+            } finally {
+                client.release();
+            }
+
+            delete activeRooms[roomId];
+        }
+    });
+
+    // New match_timeout handler for 60s draw/stake refund
+    socket.on('match_timeout', async (data) => {
+        const { roomId } = data;
+        const room = activeRooms[roomId];
+        if (room) {
+            const client = await pool.connect();
+            try {
+                await client.query('BEGIN');
+
+                for (const username of room.players) {
+                    const stake = room.stake;
+                    await client.query('UPDATE users SET balance = balance + $1 WHERE username = $2', [stake, username]);
+                    await client.query(
+                        'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
+                        ['REFUND', stake, `Match timed out (Draw) - Stake refunded`, username]
+                    );
+                }
+
+                await client.query('COMMIT');
+                io.to(roomId).emit('game_over', { winner: null, reason: 'timeout' });
+            } catch (err) {
+                await client.query('ROLLBACK');
+                console.error('Error processing match timeout refunds:', err);
+            } finally {
+                client.release();
+            }
+
             delete activeRooms[roomId];
         }
     });

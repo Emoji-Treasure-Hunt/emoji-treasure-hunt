@@ -111,6 +111,9 @@
                     matchTimeLeft = 0;
                     gameActive = false;
                     clearInterval(timerInterval);
+
+                    // Notify server of timeout draw and refund
+                    socket.emit('match_timeout', { roomId: currentRoomId });
                     return;
                 }
 
@@ -190,13 +193,25 @@
                     }
                 });
 
+                const currentUsername = localStorage.getItem('emoji_current_user_secure');
                 let userObj = getCurrentUserObj();
-                addTransaction(userObj, 'LOSS', selectedStake, `Lost match in ${selectedGroupName}`);
-                saveUserData(userObj);
 
-                updateWalletDisplay();
-                document.getElementById('message').innerHTML = `❌ Game Over! ${data.winner} found the treasure first. ₦${selectedStake.toLocaleString()} stake deducted.`;
-                document.getElementById('turn-indicator').innerText = "Opponent Won!";
+                if (data.reason === 'timeout') {
+                    addTransaction(userObj, 'REFUND', selectedStake, `Match timeout draw - Stake refunded`);
+                    document.getElementById('message').innerHTML = `⏱️ Match timed out! It's a draw. Your ₦${selectedStake.toLocaleString()} stake has been refunded.`;
+                    document.getElementById('turn-indicator').innerText = "Match Draw (Refunded)";
+                } else if (data.winner === currentUsername) {
+                    addTransaction(userObj, 'WIN', data.netWinnings, `Won ${selectedGroupName} treasure pool`);
+                    document.getElementById('message').innerHTML = `🎉 Victory! You found the treasure first and won ₦${data.netWinnings.toLocaleString()} (₦15 fee deducted).`;
+                    document.getElementById('turn-indicator').innerText = "You Won!";
+                } else {
+                    addTransaction(userObj, 'LOSS', selectedStake, `Lost match in ${selectedGroupName}`);
+                    document.getElementById('message').innerHTML = `❌ Game Over! ${data.winner} found the treasure first. ₦${selectedStake.toLocaleString()} stake deducted.`;
+                    document.getElementById('turn-indicator').innerText = "Opponent Won!";
+                }
+
+                saveUserData(userObj);
+                updateLobbyWallet();
                 selectedStake = 0;
             }
         });
@@ -1878,19 +1893,9 @@
 
         boxEl.classList.add('revealed');
         const messageEl = document.getElementById('message');
-        let userObj = getCurrentUserObj();
         
         if (index === treasureIndex) {
             boxEl.innerText = currentTreasureEmoji;
-            let totalPool = selectedStake * 2;
-            let platformFee = 15; 
-            let netWinnings = totalPool - platformFee; 
-            
-            userObj.balance += netWinnings;
-            userObj.totalWins = (userObj.totalWins || 0) + 1;
-            userObj.totalWon = (userObj.totalWon || 0) + (netWinnings - selectedStake);
-            addTransaction(userObj, 'WIN', netWinnings, `Won ${selectedGroupName} treasure pool`);
-            saveUserData(userObj);
             
             socket.emit('player_won', {
                 roomId: currentRoomId,
@@ -1900,8 +1905,6 @@
             gameActive = false;
             selectedStake = 0;
             clearInterval(timerInterval);
-            messageEl.innerHTML = `🎉 YOU FOUND IT! Won ₦${netWinnings.toLocaleString()} total credited in the ${selectedGroupName} (₦15 fee applied).`;
-            document.getElementById('turn-indicator').innerText = "Victory!";
         } else {
             let randomDecoy = decoyPool[Math.floor(Math.random() * decoyPool.length)];
             boxEl.innerText = randomDecoy;
@@ -1910,7 +1913,6 @@
 
             socket.emit('play_turn', {
                 roomId: currentRoomId,
-                username: currentUser,
                 index: index,
                 decoyEmoji: randomDecoy
             });
