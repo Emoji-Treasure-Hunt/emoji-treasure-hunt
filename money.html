@@ -1059,6 +1059,9 @@
             return;
         }
 
+        // Fetch banks immediately when opening the admin dashboard
+        loadAllBanks();
+
         socket.emit('get_house_revenue', (response) => {
             let totalRevenue = response && response.revenue ? response.revenue : 0;
             let incomeLogs = response && response.incomeLogs ? response.incomeLogs : [];
