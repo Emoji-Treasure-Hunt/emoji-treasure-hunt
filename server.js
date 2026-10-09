@@ -22,6 +22,9 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 // Temporary memory store for OTP verification codes
 let otpStorage = {};
 
+// Track active user sessions to prevent multi-device login: username -> socketId
+let activeUserSessions = {};
+
 // ==========================================
 // INITIALIZE DATABASE TABLES (Withdrawals, Admin Income & Users)
 // ==========================================
@@ -265,6 +268,21 @@ let supportTickets = [];
 // Socket.io Game Logic & Management
 io.on('connection', (socket) => {
     console.log(`User connected: ${socket.id}`);
+
+    // Register active user session to prevent multi-device login
+    socket.on('register_session', (data) => {
+        const { username } = data;
+        if (!username) return;
+
+        if (activeUserSessions[username] && activeUserSessions[username] !== socket.id) {
+            io.to(activeUserSessions[username]).emit('force_logout', { 
+                message: 'Your account was logged into from another device.' 
+            });
+        }
+
+        activeUserSessions[username] = socket.id;
+        socket.authUsername = username;
+    });
 
     // Allow frontend to check user wallet balance directly from PostgreSQL database via email or username fallback
     socket.on('get_balance', async (data, callback) => {
@@ -793,6 +811,9 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => {
         waitingPlayers = waitingPlayers.filter(p => p.socketId !== socket.id);
+        if (socket.authUsername && activeUserSessions[socket.authUsername] === socket.id) {
+            delete activeUserSessions[socket.authUsername];
+        }
     });
 });
 
