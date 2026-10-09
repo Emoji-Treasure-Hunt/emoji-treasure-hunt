@@ -1894,10 +1894,6 @@
                 roomId: currentRoomId,
                 winner: currentUser
             });
-
-            gameActive = false;
-            selectedStake = 0;
-            clearInterval(timerInterval);
         } else {
             let randomDecoy = decoyPool[Math.floor(Math.random() * decoyPool.length)];
             boxEl.innerText = randomDecoy;
