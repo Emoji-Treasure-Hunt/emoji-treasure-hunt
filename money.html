@@ -199,12 +199,12 @@
                     document.getElementById('turn-indicator').innerText = "Match Draw (Refunded)";
                 } else if (data.winner === currentUsername) {
                     addTransaction(userObj, 'WIN', data.netWinnings, `Won ${selectedGroupName} treasure pool`);
-                    document.getElementById('message').innerHTML = `🎉 Victory! You found the treasure first and won ₦${data.netWinnings.toLocaleString()} (₦15 fee deducted).`;
-                    document.getElementById('turn-indicator').innerText = "You Won!";
+                    document.getElementById('message').innerHTML = `🎉 Congratulations you have won the sum of ₦${data.netWinnings.toLocaleString()}. Charges ₦15 applied.`;
+                    document.getElementById('turn-indicator').innerHTML = `<strong style="color: #10b981;">🎉 Victory! You Won!</strong>`;
                 } else {
                     addTransaction(userObj, 'LOSS', selectedStake, `Lost match in ${selectedGroupName}`);
                     document.getElementById('message').innerHTML = `❌ Game Over! ${data.winner} found the treasure first. ₦${selectedStake.toLocaleString()} stake deducted.`;
-                    document.getElementById('turn-indicator').innerText = "Opponent Won!";
+                    document.getElementById('turn-indicator').innerHTML = `<strong style="color: #f43f5e;">❌ Opponent Won!</strong>`;
                 }
 
                 saveUserData(userObj);
@@ -1923,6 +1923,44 @@
             });
         }
     }
+
+    // Updated socket game_over event handler with custom text format
+    socket.on('game_over', (data) => {
+        if (gameActive) {
+            gameActive = false;
+            clearInterval(timerInterval);
+            
+            const boxes = document.querySelectorAll('.box');
+            boxes.forEach((box, idx) => {
+                box.disabled = true;
+                if (idx === treasureIndex) {
+                    box.innerText = currentTreasureEmoji;
+                    box.classList.add('revealed');
+                }
+            });
+
+            const currentUsername = localStorage.getItem('emoji_current_user_secure');
+            let userObj = getCurrentUserObj();
+
+            if (data.reason === 'timeout') {
+                addTransaction(userObj, 'REFUND', selectedStake, `Match timeout draw - Stake refunded`);
+                document.getElementById('message').innerHTML = `⏱️ Match timed out! It's a draw. Your ₦${selectedStake.toLocaleString()} stake has been refunded.`;
+                document.getElementById('turn-indicator').innerText = "Match Draw (Refunded)";
+            } else if (data.winner === currentUsername) {
+                addTransaction(userObj, 'WIN', data.netWinnings, `Won ${selectedGroupName} treasure pool`);
+                document.getElementById('message').innerHTML = `🎉 Congratulations you have won the sum of ₦${data.netWinnings.toLocaleString()}. Charges ₦15 applied.`;
+                document.getElementById('turn-indicator').innerHTML = `<strong style="color: #10b981;">🎉 Victory! You Won!</strong>`;
+            } else {
+                addTransaction(userObj, 'LOSS', selectedStake, `Lost match in ${selectedGroupName}`);
+                document.getElementById('message').innerHTML = `❌ Game Over! ${data.winner} found the treasure first. ₦${selectedStake.toLocaleString()} stake deducted.`;
+                document.getElementById('turn-indicator').innerHTML = `<strong style="color: #f43f5e;">❌ Opponent Won!</strong>`;
+            }
+
+            saveUserData(userObj);
+            updateLobbyWallet();
+            selectedStake = 0;
+        }
+    });
 
     window.onload = function() {
         loadAllBanks();
