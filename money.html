@@ -35,10 +35,7 @@
                 return;
             }
 
-            userObj.balance -= stakeAmount;
-            addTransaction(userObj, 'STAKE', stakeAmount, `Joined ${groupName} queue`);
-            saveUserData(userObj);
-
+            // Stake is now handled securely on the server upon match creation
             switchScreen('game-screen');
             document.getElementById('display-user').innerText = username;
             document.getElementById('active-group-title').innerText = groupName;
@@ -1816,10 +1813,6 @@
 
         if (selectedStake > 0) {
             socket.emit('leave_queue', { username: currentUser });
-            let userObj = getCurrentUserObj();
-            userObj.balance += selectedStake;
-            addTransaction(userObj, 'REFUND', selectedStake, `Cancelled queue for ${selectedGroupName}`);
-            saveUserData(userObj);
             selectedStake = 0;
         }
 

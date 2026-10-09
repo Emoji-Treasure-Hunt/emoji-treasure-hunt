@@ -595,9 +595,17 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('join_queue', (data) => {
+    // Updated join_queue handler with server-side PostgreSQL stake deduction
+    socket.on('join_queue', async (data) => {
         const { username, stake } = data;
         
+        // Verify balance in DB first
+        const userRes = await pool.query('SELECT balance FROM users WHERE username = $1', [username]);
+        if (userRes.rows.length === 0 || parseFloat(userRes.rows[0].balance) < stake) {
+            socket.emit('error_message', { message: 'Insufficient wallet balance.' });
+            return;
+        }
+
         waitingPlayers = waitingPlayers.filter(p => p.username !== username);
         waitingPlayers.push({ socketId: socket.id, username, stake });
 
@@ -605,26 +613,51 @@ io.on('connection', (socket) => {
             const player1 = waitingPlayers.shift();
             const player2 = waitingPlayers.shift();
 
-            const roomId = 'room_' + Date.now();
-            const targetEmojis = ['💎', '🔑', '👑', '🪙', '🏆'];
-            const targetEmoji = targetEmojis[Math.floor(Math.random() * targetEmojis.length)];
-            const winningIndex = Math.floor(Math.random() * 40);
+            const client = await pool.connect();
+            try {
+                await client.query('BEGIN');
 
-            activeRooms[roomId] = {
-                players: [player1.username, player2.username],
-                stake: player1.stake,
-                targetEmoji,
-                winningIndex,
-                turn: player1.username
-            };
+                // Deduct stakes from both players in database immediately upon match creation
+                await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [player1.stake, player1.username]);
+                await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [player2.stake, player2.username]);
 
-            // Join both sockets to the room channel so broadcast room messages work seamlessly
-            const socket1 = io.sockets.sockets.get(player1.socketId);
-            const socket2 = io.sockets.sockets.get(player2.socketId);
-            if (socket1) socket1.join(roomId);
-            if (socket2) socket2.join(roomId);
+                await client.query(
+                    'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
+                    ['STAKE', player1.stake, `Staked for match queue`, player1.username]
+                );
+                await client.query(
+                    'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
+                    ['STAKE', player2.stake, `Staked for match queue`, player2.username]
+                );
 
-            io.to(roomId).emit('match_found', { roomId, players: [player1.username, player2.username], targetEmoji, winningIndex });
+                await client.query('COMMIT');
+
+                const roomId = 'room_' + Date.now();
+                const targetEmojis = ['💎', '🔑', '👑', '🪙', '🏆'];
+                const targetEmoji = targetEmojis[Math.floor(Math.random() * targetEmojis.length)];
+                const winningIndex = Math.floor(Math.random() * 40);
+
+                activeRooms[roomId] = {
+                    players: [player1.username, player2.username],
+                    stake: player1.stake,
+                    targetEmoji,
+                    winningIndex,
+                    turn: player1.username
+                };
+
+                const socket1 = io.sockets.sockets.get(player1.socketId);
+                const socket2 = io.sockets.sockets.get(player2.socketId);
+                if (socket1) socket1.join(roomId);
+                if (socket2) socket2.join(roomId);
+
+                io.to(roomId).emit('match_found', { roomId, players: [player1.username, player2.username], targetEmoji, winningIndex });
+
+            } catch (err) {
+                await client.query('ROLLBACK');
+                console.error('Error starting match queue:', err);
+            } finally {
+                client.release();
+            }
         }
     });
 
@@ -636,7 +669,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Updated player_won event with ₦15 fee deduction and database credit
+    // Updated player_won event with ₦15 fee deduction, database credit, and loser loss log
     socket.on('player_won', async (data) => {
         const { roomId, winner } = data;
         const room = activeRooms[roomId];
@@ -645,6 +678,8 @@ io.on('connection', (socket) => {
             try {
                 await client.query('BEGIN');
 
+                const [player1, player2] = room.players;
+                const loser = player1 === winner ? player2 : player1;
                 const stake = room.stake;
                 const totalPool = stake * 2;
                 const houseCut = 15;
@@ -662,7 +697,13 @@ io.on('connection', (socket) => {
                     ['WIN', netWinnings, `Won ${stake * 2} pool match (₦15 fee applied)`, winner]
                 );
 
-                // 3. Accumulate house fee
+                // 3. Log the LOSS transaction for the loser
+                await client.query(
+                    'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
+                    ['LOSS', stake, `Lost match treasure hunt`, loser]
+                );
+
+                // 4. Accumulate house fee
                 houseRevenue += houseCut;
                 incomeLogs.unshift({
                     type: 'COMMISSION',
