@@ -35,7 +35,6 @@
                 return;
             }
 
-            // Stake is now handled securely on the server upon match creation
             switchScreen('game-screen');
             document.getElementById('display-user').innerText = username;
             document.getElementById('active-group-title').innerText = groupName;
@@ -109,7 +108,6 @@
                     gameActive = false;
                     clearInterval(timerInterval);
 
-                    // Notify server of timeout draw and refund
                     socket.emit('match_timeout', { roomId: currentRoomId });
                     return;
                 }
@@ -191,23 +189,18 @@
                 });
 
                 const currentUsername = localStorage.getItem('emoji_current_user_secure');
-                let userObj = getCurrentUserObj();
 
                 if (data.reason === 'timeout') {
-                    addTransaction(userObj, 'REFUND', selectedStake, `Match timeout draw - Stake refunded`);
                     document.getElementById('message').innerHTML = `⏱️ Match timed out! It's a draw. Your ₦${selectedStake.toLocaleString()} stake has been refunded.`;
                     document.getElementById('turn-indicator').innerText = "Match Draw (Refunded)";
                 } else if (data.winner === currentUsername) {
-                    addTransaction(userObj, 'WIN', data.netWinnings, `Won ${selectedGroupName} treasure pool`);
                     document.getElementById('message').innerHTML = `🎉 Congratulations you have won the sum of ₦${data.netWinnings.toLocaleString()}. Charges ₦15 applied.`;
                     document.getElementById('turn-indicator').innerHTML = `<strong style="color: #10b981;">🎉 Victory! You Won!</strong>`;
                 } else {
-                    addTransaction(userObj, 'LOSS', selectedStake, `Lost match in ${selectedGroupName}`);
                     document.getElementById('message').innerHTML = `❌ Game Over! ${data.winner} found the treasure first. ₦${selectedStake.toLocaleString()} stake deducted.`;
                     document.getElementById('turn-indicator').innerHTML = `<strong style="color: #f43f5e;">❌ Opponent Won!</strong>`;
                 }
 
-                saveUserData(userObj);
                 updateLobbyWallet();
                 selectedStake = 0;
             }
@@ -603,7 +596,7 @@
         <div id="auth-msg" class="error-msg"></div>
     </div>
 
-    <!-- MAIN DASHBOARD (LOBBY) SCREEN WITH 3-LINE HAMBURGER MENU -->
+    <!-- MAIN DASHBOARD (LOBBY) SCREEN -->
     <div id="lobby-screen" class="screen-section">
         <h1><span class="app-logo">😁</span> Emoji Dashboard</h1>
         
@@ -614,7 +607,6 @@
                 <button class="logout-btn" onclick="logout()">Log Out</button>
             </div>
             
-            <!-- Dropdown Menu (3-Lines) -->
             <div id="hamburger-dropdown" class="dropdown-menu">
                 <button class="dropdown-item" onclick="closeMenu(); showLeaderboard()">🏆 Top Hunters</button>
                 <button class="dropdown-item" onclick="closeMenu(); showTransactionHistory()">📜 History</button>
@@ -1009,58 +1001,47 @@
         });
     }
 
-    function addTransaction(userObj, type, amount, description) {
-        if (!userObj.transactions) {
-            userObj.transactions = [];
-        }
-        userObj.transactions.unshift({
-            date: new Date().toLocaleString(),
-            type: type,
-            amount: amount,
-            description: description
-        });
-        if (userObj.transactions.length > 50) {
-            userObj.transactions.pop();
-        }
-    }
-
     function showTransactionHistory() {
         switchScreen('transaction-history-screen');
-        let users = JSON.parse(localStorage.getItem('emoji_users_secure') || '{}');
-        let userObj = users[currentUser] || {};
-        let transactions = userObj.transactions || [];
         const container = document.getElementById('transaction-container');
-        container.innerHTML = '';
+        container.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 20px;">Loading transactions from database...</div>`;
 
-        if (transactions.length === 0) {
-            container.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 20px;">No transactions found yet.</div>`;
-            return;
-        }
+        let userObj = getCurrentUserObj();
+        let userEmail = userObj.contact || "";
 
-        transactions.forEach(tx => {
-            let color = '#38bdf8';
-            let sign = '';
-            if (tx.type === 'DEPOSIT' || tx.type === 'WIN' || tx.type === 'REFUND') {
-                color = '#10b981';
-                sign = '+';
-            } else if (tx.type === 'STAKE' || tx.type === 'WITHDRAWAL' || tx.type === 'LOSS') {
-                color = '#f43f5e';
-                sign = '-';
+        socket.emit('get_user_transactions', { email: userEmail, username: currentUser }, (response) => {
+            container.innerHTML = '';
+
+            if (!response || !response.success || response.transactions.length === 0) {
+                container.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 20px;">No transactions found yet.</div>`;
+                return;
             }
 
-            const item = document.createElement('div');
-            item.classList.add('leaderboard-item');
-            item.innerHTML = `
-                <div>
-                    <strong style="color: ${color};">${tx.type}</strong><br>
-                    <span style="font-size: 0.75rem; color: #94a3b8;">${tx.description}</span><br>
-                    <span style="font-size: 0.7rem; color: #64748b;">${tx.date}</span>
-                </div>
-                <div style="text-align: right; color: ${color}; font-weight: bold;">
-                    ${sign}₦${Math.abs(tx.amount).toLocaleString()}
-                </div>
-            `;
-            container.appendChild(item);
+            response.transactions.forEach(tx => {
+                let color = '#38bdf8';
+                let sign = '';
+                if (tx.type === 'DEPOSIT' || tx.type === 'WIN' || tx.type === 'REFUND') {
+                    color = '#10b981';
+                    sign = '+';
+                } else if (tx.type === 'STAKE' || tx.type === 'WITHDRAWAL' || tx.type === 'LOSS') {
+                    color = '#f43f5e';
+                    sign = '-';
+                }
+
+                const item = document.createElement('div');
+                item.classList.add('leaderboard-item');
+                item.innerHTML = `
+                    <div>
+                        <strong style="color: ${color};">${tx.type}</strong><br>
+                        <span style="font-size: 0.75rem; color: #94a3b8;">${tx.description}</span><br>
+                        <span style="font-size: 0.7rem; color: #64748b;">${tx.date}</span>
+                    </div>
+                    <div style="text-align: right; color: ${color}; font-weight: bold;">
+                        ${sign}₦${Math.abs(tx.amount).toLocaleString()}
+                    </div>
+                `;
+                container.appendChild(item);
+            });
         });
     }
 
@@ -1553,8 +1534,7 @@
                 gender: gender,
                 balance: 0.00,
                 totalWins: 0,
-                totalWon: 0.00,
-                transactions: []
+                totalWon: 0.00
             };
 
             socket.emit('send_email_otp', { email: contact }, (response) => {
@@ -1579,8 +1559,7 @@
                         username: response.user.username,
                         contact: response.user.email,
                         balance: response.user.balance,
-                        password: password,
-                        transactions: []
+                        password: password
                     };
                     localStorage.setItem('emoji_users_secure', JSON.stringify(users));
                     loginUser(username);
@@ -1685,8 +1664,7 @@
 
     function getCurrentUserObj() {
         let users = getUsers();
-        let obj = users[currentUser] || { balance: 0, totalWins: 0, totalWon: 0, country: "Nigeria", transactions: [] };
-        if (!obj.transactions) obj.transactions = [];
+        let obj = users[currentUser] || { balance: 0, totalWins: 0, totalWon: 0, country: "Nigeria" };
         return obj;
     }
 
@@ -1824,7 +1802,6 @@
         }, (response) => {
             if (response && response.success) {
                 userObj.balance -= amount;
-                addTransaction(userObj, 'WITHDRAWAL', amount, `Requested withdrawal to ${bankName} (${accountNum})`);
                 saveUserData(userObj);
 
                 document.getElementById('cashier-wallet-balance').innerText = `₦${userObj.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
@@ -1987,7 +1964,6 @@
         }
     }
 
-    // Updated socket game_over event handler with custom text format
     socket.on('game_over', (data) => {
         if (gameActive) {
             gameActive = false;
@@ -2003,23 +1979,18 @@
             });
 
             const currentUsername = localStorage.getItem('emoji_current_user_secure');
-            let userObj = getCurrentUserObj();
 
             if (data.reason === 'timeout') {
-                addTransaction(userObj, 'REFUND', selectedStake, `Match timeout draw - Stake refunded`);
                 document.getElementById('message').innerHTML = `⏱️ Match timed out! It's a draw. Your ₦${selectedStake.toLocaleString()} stake has been refunded.`;
                 document.getElementById('turn-indicator').innerText = "Match Draw (Refunded)";
             } else if (data.winner === currentUsername) {
-                addTransaction(userObj, 'WIN', data.netWinnings, `Won ${selectedGroupName} treasure pool`);
                 document.getElementById('message').innerHTML = `🎉 Congratulations you have won the sum of ₦${data.netWinnings.toLocaleString()}. Charges ₦15 applied.`;
                 document.getElementById('turn-indicator').innerHTML = `<strong style="color: #10b981;">🎉 Victory! You Won!</strong>`;
             } else {
-                addTransaction(userObj, 'LOSS', selectedStake, `Lost match in ${selectedGroupName}`);
                 document.getElementById('message').innerHTML = `❌ Game Over! ${data.winner} found the treasure first. ₦${selectedStake.toLocaleString()} stake deducted.`;
                 document.getElementById('turn-indicator').innerHTML = `<strong style="color: #f43f5e;">❌ Opponent Won!</strong>`;
             }
 
-            saveUserData(userObj);
             updateLobbyWallet();
             selectedStake = 0;
         }

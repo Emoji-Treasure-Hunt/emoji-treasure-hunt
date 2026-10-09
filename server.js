@@ -1,5 +1,5 @@
 const express = require('express');
-const http = require('http');
+const http = http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const https = require('https');
@@ -256,89 +256,6 @@ app.post('/verify-bank-account', (req, res) => {
     reqPaystack.end();
 });
 
-// Process Automated Payout Transfer Route
-app.post('/process-payout', (req, res) => {
-    const { amount, bankCode, accountNumber, accountName } = req.body;
-
-    if (!amount || !bankCode || !accountNumber) {
-        return res.status(400).json({ success: false, message: 'Missing payout parameters.' });
-    }
-
-    const recipientParams = JSON.stringify({
-        type: 'nuban',
-        name: accountName,
-        account_number: accountNumber,
-        bank_code: bankCode,
-        currency: 'NGN'
-    });
-
-    const recipientOptions = {
-        hostname: 'api.paystack.co',
-        port: 443,
-        path: '/transferrecipient',
-        method: 'POST',
-        headers: {
-            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-            'Content-Type': 'application/json'
-        }
-    };
-
-    const recipientReq = https.request(recipientOptions, recipientRes => {
-        let recData = '';
-        recipientRes.on('data', chunk => recData += chunk);
-        recipientRes.on('end', () => {
-            try {
-                const recResponse = JSON.parse(recData);
-                if (!recResponse.status) {
-                    return res.status(400).json({ success: false, message: 'Failed to create transfer recipient.' });
-                }
-
-                const recipientCode = recResponse.data.recipient_code;
-
-                const transferParams = JSON.stringify({
-                    source: 'balance',
-                    amount: amount * 100,
-                    recipient: recipientCode,
-                    reason: 'Emoji Treasure Hunt Withdrawal'
-                });
-
-                const transferOptions = {
-                    hostname: 'api.paystack.co',
-                    port: 443,
-                    path: '/transfer',
-                    method: 'POST',
-                    headers: {
-                        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-                        'Content-Type': 'application/json'
-                    }
-                };
-
-                const transferReq = https.request(transferOptions, transferRes => {
-                    let transData = '';
-                    transferRes.on('data', chunk => transData += chunk);
-                    transferRes.on('end', () => {
-                        const transResponse = JSON.parse(transData);
-                        if (transResponse.status) {
-                            res.json({ success: true, message: 'Transfer queued successfully by Paystack.' });
-                        } else {
-                            res.status(400).json({ success: false, message: transResponse.message || 'Transfer failed.' });
-                        }
-                    });
-                });
-
-                transferReq.write(transferParams);
-                transferReq.end();
-
-            } catch (e) {
-                res.status(500).json({ success: false, message: 'Error processing transfer request.' });
-            }
-        });
-    });
-
-    recipientReq.write(recipientParams);
-    recipientReq.end();
-});
-
 // In-Memory Game State Variables (Rooms & Match queues remain in-memory for active socket gameplay speed)
 let waitingPlayers = [];
 let activeRooms = {};
@@ -365,6 +282,30 @@ io.on('connection', (socket) => {
         } catch (err) {
             console.error("Error fetching balance from DB:", err);
             callback({ success: false, balance: 0 });
+        }
+    });
+
+    // Fetch user transaction history directly from PostgreSQL database
+    socket.on('get_user_transactions', async (data, callback) => {
+        const { email, username } = data;
+        try {
+            let result;
+            if (email) {
+                result = await pool.query("SELECT type, amount, description, TO_CHAR(created_at, 'YYYY-MM-DD HH12:MI:SS AM') AS date FROM transactions WHERE email = $1 ORDER BY id DESC LIMIT 50", [email]);
+            }
+            if ((!result || result.rows.length === 0) && username) {
+                result = await pool.query(`
+                    SELECT t.type, t.amount, t.description, TO_CHAR(t.created_at, 'YYYY-MM-DD HH12:MI:SS AM') AS date 
+                    FROM transactions t 
+                    JOIN users u ON t.email = u.email 
+                    WHERE u.username = $1 
+                    ORDER BY t.id DESC LIMIT 50
+                `, [username]);
+            }
+            callback({ success: true, transactions: result ? result.rows : [] });
+        } catch (err) {
+            console.error('Error fetching user transactions from DB:', err);
+            callback({ success: false, transactions: [] });
         }
     });
 
@@ -415,14 +356,14 @@ io.on('connection', (socket) => {
     socket.on('verify_email_otp', (data, callback) => {
         const { email, enteredOtp } = data;
         if (otpStorage[email] && otpStorage[email] === enteredOtp) {
-            delete otpStorage[email]; // clear code after successful use
+            delete otpStorage[email];
             callback({ success: true });
         } else {
             callback({ success: false, message: 'Invalid or expired verification code.' });
         }
     });
 
-    // 1. Database-backed User Registration Handler with Bulletproof Email Mapping
+    // Database-backed User Registration Handler
     socket.on('register_user', async (data, callback) => {
         const username = data ? data.username : null;
         const email = data ? (data.email || data.contact) : null;
@@ -450,7 +391,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 2. Database-backed User Login Handler
+    // Database-backed User Login Handler
     socket.on('login_user', async (data, callback) => {
         const { username, password } = data;
         try {
@@ -478,7 +419,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 3. Database-backed Change Password Handler
+    // Database-backed Change Password Handler
     socket.on('change_password', async (data, callback) => {
         const { username, oldPassword, newPassword } = data;
         try {
@@ -495,7 +436,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Manual Withdrawal Request Handler with Flexible User Lookup Fallback
+    // Manual Withdrawal Request Handler
     socket.on('request_withdrawal', async (data, callback) => {
         const { username, amount, bankName, accountNumber, accountName } = data;
 
@@ -544,7 +485,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Fetch pending manual withdrawals for admin review
     socket.on('get_pending_withdrawals', async (callback) => {
         try {
             const result = await pool.query("SELECT * FROM withdrawals WHERE status = 'Pending' ORDER BY created_at ASC");
@@ -555,7 +495,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Mark manual withdrawal as fulfilled/paid by admin
     socket.on('complete_withdrawal', async (data, callback) => {
         const { withdrawalId } = data;
         try {
@@ -567,7 +506,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Reject manual withdrawal and refund funds back to the user's wallet
     socket.on('deny_withdrawal', async (data, callback) => {
         const { withdrawalId } = data;
         const client = await pool.connect();
@@ -602,11 +540,10 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Updated join_queue handler with server-side PostgreSQL stake deduction
+    // Matchmaking & Queue Handlers
     socket.on('join_queue', async (data) => {
         const { username, stake } = data;
         
-        // Verify balance in DB first
         const userRes = await pool.query('SELECT balance FROM users WHERE username = $1', [username]);
         if (userRes.rows.length === 0 || parseFloat(userRes.rows[0].balance) < stake) {
             socket.emit('error_message', { message: 'Insufficient wallet balance.' });
@@ -624,7 +561,6 @@ io.on('connection', (socket) => {
             try {
                 await client.query('BEGIN');
 
-                // Deduct stakes from both players in database immediately upon match creation
                 await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [player1.stake, player1.username]);
                 await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [player2.stake, player2.username]);
 
@@ -676,7 +612,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Updated player_won event with ₦15 fee deduction saved permanently to database
     socket.on('player_won', async (data) => {
         const { roomId, winner } = data;
         const room = activeRooms[roomId];
@@ -692,25 +627,21 @@ io.on('connection', (socket) => {
                 const houseCut = 15;
                 const netWinnings = totalPool - houseCut;
 
-                // 1. Credit the winner's balance in database
                 await client.query(
                     'UPDATE users SET balance = balance + $1 WHERE username = $2',
                     [netWinnings, winner]
                 );
 
-                // 2. Log the WIN transaction for the winner
                 await client.query(
                     'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
                     ['WIN', netWinnings, `Won ${stake * 2} pool match (₦15 fee applied)`, winner]
                 );
 
-                // 3. Log the LOSS transaction for the loser
                 await client.query(
                     'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
                     ['LOSS', stake, `Lost match treasure hunt`, loser]
                 );
 
-                // 4. Save house fee commission permanently in PostgreSQL
                 await client.query(
                     'INSERT INTO admin_income_logs (type, description, amount) VALUES ($1, $2, $3)',
                     ['COMMISSION', `₦15 flat fee from ₦${totalPool} pool match`, houseCut]
@@ -718,7 +649,6 @@ io.on('connection', (socket) => {
 
                 await client.query('COMMIT');
 
-                // Broadcast game over to everyone in the room
                 io.to(roomId).emit('game_over', { winner, reason: 'treasure_found', netWinnings });
             } catch (err) {
                 await client.query('ROLLBACK');
@@ -731,7 +661,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // New match_timeout handler for 60s draw/stake refund
     socket.on('match_timeout', async (data) => {
         const { roomId } = data;
         const room = activeRooms[roomId];
@@ -767,7 +696,6 @@ io.on('connection', (socket) => {
         waitingPlayers = waitingPlayers.filter(p => p.username !== username);
     });
 
-    // Pull house revenue sums and logs directly from PostgreSQL database
     socket.on('get_house_revenue', async (callback) => {
         try {
             const sumRes = await pool.query('SELECT SUM(amount) AS total FROM admin_income_logs');
@@ -801,7 +729,6 @@ io.on('connection', (socket) => {
                 return;
             }
 
-            // Record negative adjustment / withdrawal log in database
             await pool.query(
                 'INSERT INTO admin_income_logs (type, description, amount) VALUES ($1, $2, $3)',
                 ['WITHDRAWAL', `Withdrawn to ${bankName} (${accountNumber})`, -amount]
@@ -851,7 +778,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Live Group Chat Broadcast Listener
     socket.on('send_chat_message', (data) => {
         const { username, message } = data;
         if (!username || !message || message.trim() === '') return;
@@ -862,7 +788,6 @@ io.on('connection', (socket) => {
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         };
 
-        // Broadcast to all connected clients
         io.emit('receive_chat_message', chatPayload);
     });
 
