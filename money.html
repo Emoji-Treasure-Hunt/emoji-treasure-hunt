@@ -430,6 +430,61 @@
         }
         .dropdown-item:hover { background: #334155; color: #38bdf8; }
         .dropdown-item:last-child { border-bottom: none; }
+
+        /* GROUP CHAT STYLES */
+        .chat-container {
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 10px;
+            padding: 10px;
+            margin-top: 15px;
+            text-align: left;
+        }
+        .chat-messages {
+            height: 130px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding-right: 4px;
+            margin-bottom: 8px;
+            font-size: 0.8rem;
+        }
+        .chat-msg-item {
+            background: #1e293b;
+            padding: 6px 10px;
+            border-radius: 6px;
+            word-break: break-word;
+        }
+        .chat-msg-user {
+            color: #38bdf8;
+            font-weight: bold;
+        }
+        .chat-msg-time {
+            font-size: 0.65rem;
+            color: #64748b;
+            float: right;
+        }
+        .chat-input-row {
+            display: flex;
+            gap: 6px;
+        }
+        .chat-input-row input {
+            flex: 1;
+            padding: 8px;
+            font-size: 0.85rem;
+        }
+        .chat-send-btn {
+            background: #0284c7;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 0.85rem;
+        }
+        .chat-send-btn:hover { background: #0369a1; }
     </style>
 </head>
 <body>
@@ -611,6 +666,18 @@
                 <p style="color: #10b981; margin-top: 2px;">🟢 Turn-Based Ready</p>
             </div>
             <button class="group-btn" onclick="joinGameQueue(5000, 'Gold Chamber')">Play</button>
+        </div>
+
+        <!-- GROUP CHAT ROOM SECTION -->
+        <div class="chat-container">
+            <h3 style="font-size: 0.9rem; color: #38bdf8; margin: 0 0 8px 0;">💬 Hunters Live Chat</h3>
+            <div id="chat-messages-box" class="chat-messages">
+                <div style="color: #64748b; text-align: center; margin-top: auto; margin-bottom: auto; font-size: 0.75rem;">Welcome to the community chat! Say hello to fellow hunters.</div>
+            </div>
+            <div class="chat-input-row">
+                <input type="text" id="chat-input-field" placeholder="Type a message..." maxlength="150" onkeypress="handleChatKeyPress(event)">
+                <button class="chat-send-btn" onclick="sendChatMessage()">Send</button>
+            </div>
         </div>
     </div>
 
@@ -1958,16 +2025,53 @@
         }
     });
 
-    window.onload = function() {
-        loadAllBanks();
-        const savedUser = localStorage.getItem('emoji_current_user_secure');
-        if (savedUser) {
-            let users = getUsers();
-            if (users[savedUser]) {
-                loginUser(savedUser);
-            }
+    // CHAT FUNCTIONS
+    function sendChatMessage() {
+        const inputField = document.getElementById('chat-input-field');
+        const message = inputField.value.trim();
+
+        if (!message || !currentUser) return;
+
+        socket.emit('send_chat_message', {
+            username: currentUser,
+            message: message
+        });
+
+        inputField.value = '';
+    }
+
+    function handleChatKeyPress(event) {
+        if (event.key === 'Enter') {
+            sendChatMessage();
         }
-    };
+    }
+
+    socket.on('receive_chat_message', (data) => {
+        const chatBox = document.getElementById('chat-messages-box');
+        
+        if (chatBox.children.length === 1 && chatBox.children[0].tagName === 'DIV' && chatBox.children[0].style.textAlign === 'center') {
+            chatBox.innerHTML = '';
+        }
+
+        const msgDiv = document.createElement('div');
+        msgDiv.classList.add('chat-msg-item');
+        
+        let isMe = (data.username === currentUser);
+        let userColor = isMe ? '#10b981' : '#38bdf8';
+
+        msgDiv.innerHTML = `
+            <span class="chat-msg-user" style="color: ${userColor};">${data.username}</span>
+            <span class="chat-msg-time">${data.time}</span><br>
+            <span style="color: #f8fafc;">${escapeHtml(data.message)}</span>
+        `;
+
+        chatBox.appendChild(msgDiv);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    });
+
+    function escapeHtml(text) {
+        return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    }
 </script>
 
 </body>

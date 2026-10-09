@@ -816,6 +816,21 @@ io.on('connection', (socket) => {
         }
     });
 
+    // Live Group Chat Broadcast Listener
+    socket.on('send_chat_message', (data) => {
+        const { username, message } = data;
+        if (!username || !message || message.trim() === '') return;
+
+        const chatPayload = {
+            username: username,
+            message: message.trim(),
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+
+        // Broadcast to all connected clients
+        io.emit('receive_chat_message', chatPayload);
+    });
+
     socket.on('disconnect', () => {
         waitingPlayers = waitingPlayers.filter(p => p.socketId !== socket.id);
     });
