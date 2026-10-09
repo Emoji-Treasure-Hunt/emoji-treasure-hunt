@@ -23,7 +23,7 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 let otpStorage = {};
 
 // ==========================================
-// INITIALIZE DATABASE TABLES (Withdrawals & Users)
+// INITIALIZE DATABASE TABLES (Withdrawals, Admin Income & Users)
 // ==========================================
 async function initDB() {
     try {
@@ -36,6 +36,15 @@ async function initDB() {
                 account_number VARCHAR(50) NOT NULL,
                 account_name VARCHAR(255) NOT NULL,
                 status VARCHAR(50) DEFAULT 'Pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS admin_income_logs (
+                id SERIAL PRIMARY KEY,
+                type VARCHAR(50) NOT NULL,
+                description TEXT NOT NULL,
+                amount DECIMAL(12, 2) NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
@@ -333,8 +342,6 @@ app.post('/process-payout', (req, res) => {
 // In-Memory Game State Variables (Rooms & Match queues remain in-memory for active socket gameplay speed)
 let waitingPlayers = [];
 let activeRooms = {};
-let houseRevenue = 0;
-let incomeLogs = [];
 let withdrawalLogs = [];
 let supportTickets = [];
 
@@ -669,7 +676,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Updated player_won event with ₦15 fee deduction, database credit, and loser loss log
+    // Updated player_won event with ₦15 fee deduction saved permanently to database
     socket.on('player_won', async (data) => {
         const { roomId, winner } = data;
         const room = activeRooms[roomId];
@@ -703,14 +710,11 @@ io.on('connection', (socket) => {
                     ['LOSS', stake, `Lost match treasure hunt`, loser]
                 );
 
-                // 4. Accumulate house fee
-                houseRevenue += houseCut;
-                incomeLogs.unshift({
-                    type: 'COMMISSION',
-                    description: `₦15 flat fee from ₦${totalPool} pool match`,
-                    amount: houseCut,
-                    date: new Date().toLocaleString()
-                });
+                // 4. Save house fee commission permanently in PostgreSQL
+                await client.query(
+                    'INSERT INTO admin_income_logs (type, description, amount) VALUES ($1, $2, $3)',
+                    ['COMMISSION', `₦15 flat fee from ₦${totalPool} pool match`, houseCut]
+                );
 
                 await client.query('COMMIT');
 
@@ -763,30 +767,61 @@ io.on('connection', (socket) => {
         waitingPlayers = waitingPlayers.filter(p => p.username !== username);
     });
 
-    socket.on('get_house_revenue', (callback) => {
-        callback({
-            revenue: houseRevenue,
-            incomeLogs: incomeLogs,
-            withdrawalLogs: withdrawalLogs
-        });
+    // Pull house revenue sums and logs directly from PostgreSQL database
+    socket.on('get_house_revenue', async (callback) => {
+        try {
+            const sumRes = await pool.query('SELECT SUM(amount) AS total FROM admin_income_logs');
+            let totalRevenue = sumRes.rows[0].total ? parseFloat(sumRes.rows[0].total) : 0;
+
+            const logsRes = await pool.query(`
+                SELECT type, description, amount, 
+                TO_CHAR(created_at, 'YYYY-MM-DD HH12:MI:SS AM') AS date 
+                FROM admin_income_logs ORDER BY id DESC LIMIT 50
+            `);
+            
+            callback({
+                revenue: totalRevenue,
+                incomeLogs: logsRes.rows,
+                withdrawalLogs: withdrawalLogs
+            });
+        } catch (err) {
+            console.error('Error fetching house revenue from DB:', err);
+            callback({ revenue: 0, incomeLogs: [], withdrawalLogs: [] });
+        }
     });
 
-    socket.on('admin_withdraw', (data, callback) => {
+    socket.on('admin_withdraw', async (data, callback) => {
         const { amount, bankName, accountNumber } = data;
-        if (amount > houseRevenue) {
-            callback({ success: false, message: 'Insufficient house revenue balance.' });
-            return;
+        try {
+            const sumRes = await pool.query('SELECT SUM(amount) AS total FROM admin_income_logs');
+            let currentRevenue = sumRes.rows[0].total ? parseFloat(sumRes.rows[0].total) : 0;
+
+            if (amount > currentRevenue) {
+                callback({ success: false, message: 'Insufficient house revenue balance.' });
+                return;
+            }
+
+            // Record negative adjustment / withdrawal log in database
+            await pool.query(
+                'INSERT INTO admin_income_logs (type, description, amount) VALUES ($1, $2, $3)',
+                ['WITHDRAWAL', `Withdrawn to ${bankName} (${accountNumber})`, -amount]
+            );
+
+            withdrawalLogs.unshift({
+                amount,
+                bankName,
+                accountNumber,
+                date: new Date().toLocaleString()
+            });
+
+            const updatedSumRes = await pool.query('SELECT SUM(amount) AS total FROM admin_income_logs');
+            let newRevenue = updatedSumRes.rows[0].total ? parseFloat(updatedSumRes.rows[0].total) : 0;
+
+            callback({ success: true, message: `Successfully withdrew ₦${amount.toLocaleString()} to ${bankName} (${accountNumber})`, newRevenue });
+        } catch (err) {
+            console.error('Error processing admin withdrawal:', err);
+            callback({ success: false, message: 'Server error processing admin withdrawal.' });
         }
-
-        houseRevenue -= amount;
-        withdrawalLogs.unshift({
-            amount,
-            bankName,
-            accountNumber,
-            date: new Date().toLocaleString()
-        });
-
-        callback({ success: true, message: `Successfully withdrew ₦${amount.toLocaleString()} to ${bankName} (${accountNumber})`, newRevenue: houseRevenue });
     });
 
     socket.on('submit_support_ticket', (data, callback) => {
