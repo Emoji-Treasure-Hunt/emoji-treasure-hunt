@@ -652,7 +652,7 @@ io.on('connection', (socket) => {
 
                 await client.query(
                     'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
-                    ['WIN', netWinnings, `Won ${stake * 2} pool match (₦15 fee applied)`, winner]
+                    ['WIN', netWinnings, `Won ₦${totalPool} pool match (₦15 fee applied)`, winner]
                 );
 
                 await client.query(
