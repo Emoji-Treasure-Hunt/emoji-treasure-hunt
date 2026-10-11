@@ -25,6 +25,22 @@ let otpStorage = {};
 // Track active user sessions to prevent multi-device login: username -> socketId
 let activeUserSessions = {};
 
+// Helper function for making HTTPS requests to Paystack API
+const makeHttpsRequest = (options, postData = null) => {
+    return new Promise((resolve, reject) => {
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => resolve(data));
+        });
+        req.on('error', (e) => reject(e));
+        if (postData) {
+            req.write(postData);
+        }
+        req.end();
+    });
+};
+
 // ==========================================
 // INITIALIZE DATABASE TABLES (Withdrawals, Admin Income & Users)
 // ==========================================
@@ -51,6 +67,16 @@ async function initDB() {
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
+        
+        // Auto-restore the failed 30 NGN Admin withdrawal so the balance matches reality
+        await pool.query(`
+            INSERT INTO admin_income_logs (type, description, amount)
+            SELECT 'REFUND', 'System restore for unfulfilled ₦30 withdrawal', 30.00
+            WHERE NOT EXISTS (
+                SELECT 1 FROM admin_income_logs WHERE description = 'System restore for unfulfilled ₦30 withdrawal'
+            )
+        `);
+
         console.log("Database tables verified/created successfully.");
     } catch (err) {
         console.error("Error initializing database tables:", err);
@@ -71,7 +97,6 @@ app.post('/paystack-webhook', express.raw({ type: 'application/json' }), async (
         .digest('hex');
 
     if (hash === paystackSignature) {
-        // Safe to parse into JSON after successful signature match
         const event = JSON.parse(req.body.toString());
 
         if (event.event === 'charge.success') {
@@ -84,7 +109,6 @@ app.post('/paystack-webhook', express.raw({ type: 'application/json' }), async (
             try {
                 await client.query('BEGIN');
 
-                // IDEMPOTENCY CHECK via Database
                 const existingTx = await client.query('SELECT id FROM transactions WHERE reference = $1', [reference]);
                 if (existingTx.rows.length > 0) {
                     await client.query('ROLLBACK');
@@ -92,13 +116,11 @@ app.post('/paystack-webhook', express.raw({ type: 'application/json' }), async (
                     return res.status(200).send('Webhook already processed');
                 }
 
-                // 1. Credit the user's balance permanently in the database
                 await client.query(
                     'UPDATE users SET balance = balance + $1 WHERE email = $2',
                     [amountPaid, userEmail]
                 );
 
-                // 2. Log the transaction in PostgreSQL
                 await client.query(
                     'INSERT INTO transactions (email, type, amount, description, reference) VALUES ($1, $2, $3, $4, $5)',
                     [userEmail, 'DEPOSIT', amountPaid, `Funded via Paystack (Ref: ${reference})`, reference]
@@ -159,11 +181,7 @@ app.post('/initialize-payment', (req, res) => {
 
     const reqPaystack = https.request(options, apiRes => {
         let data = '';
-
-        apiRes.on('data', chunk => {
-            data += chunk;
-        });
-
+        apiRes.on('data', chunk => data += chunk);
         apiRes.on('end', () => {
             try {
                 const response = JSON.parse(data);
@@ -259,7 +277,7 @@ app.post('/verify-bank-account', (req, res) => {
     reqPaystack.end();
 });
 
-// In-Memory Game State Variables (Rooms & Match queues remain in-memory for active socket gameplay speed)
+// In-Memory Game State Variables
 let waitingPlayers = [];
 let activeRooms = {};
 let withdrawalLogs = [];
@@ -284,7 +302,6 @@ io.on('connection', (socket) => {
         socket.authUsername = username;
     });
 
-    // Allow frontend to check user wallet balance directly from PostgreSQL database via email or username fallback
     socket.on('get_balance', async (data, callback) => {
         const { email, username } = data;
         try {
@@ -303,7 +320,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Fetch user transaction history directly from PostgreSQL database
     socket.on('get_user_transactions', async (data, callback) => {
         const { email, username } = data;
         try {
@@ -327,7 +343,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Handle sending Email Verification OTP via Resend with Console Fallback
     socket.on('send_email_otp', async (data, callback) => {
         const { email } = data;
         if (!email) {
@@ -370,7 +385,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Handle verifying OTP code entered by the user
     socket.on('verify_email_otp', (data, callback) => {
         const { email, enteredOtp } = data;
         if (otpStorage[email] && otpStorage[email] === enteredOtp) {
@@ -381,7 +395,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Database-backed User Registration Handler
     socket.on('register_user', async (data, callback) => {
         const username = data ? data.username : null;
         const email = data ? (data.email || data.contact) : null;
@@ -409,7 +422,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Database-backed User Login Handler
     socket.on('login_user', async (data, callback) => {
         const { username, password } = data;
         try {
@@ -437,7 +449,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Database-backed Change Password Handler
     socket.on('change_password', async (data, callback) => {
         const { username, oldPassword, newPassword } = data;
         try {
@@ -454,7 +465,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Manual Withdrawal Request Handler
     socket.on('request_withdrawal', async (data, callback) => {
         const { username, amount, bankName, accountNumber, accountName } = data;
 
@@ -558,7 +568,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Matchmaking & Queue Handlers
     socket.on('join_queue', async (data) => {
         const { username, stake } = data;
         
@@ -736,9 +745,13 @@ io.on('connection', (socket) => {
         }
     });
 
+    // ==========================================
+    // UPDATED PAYSTACK ADMIN WITHDRAWAL LOGIC
+    // ==========================================
     socket.on('admin_withdraw', async (data, callback) => {
         const { amount, bankName, accountNumber } = data;
         try {
+            // 1. Verify Local Balance
             const sumRes = await pool.query('SELECT SUM(amount) AS total FROM admin_income_logs');
             let currentRevenue = sumRes.rows[0].total ? parseFloat(sumRes.rows[0].total) : 0;
 
@@ -747,9 +760,65 @@ io.on('connection', (socket) => {
                 return;
             }
 
+            // 2. Fetch Bank Code from Paystack (Matches name to code seamlessly)
+            const bankListStr = await makeHttpsRequest({
+                hostname: 'api.paystack.co',
+                path: '/bank?country=nigeria',
+                method: 'GET',
+                headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` }
+            });
+            const bankList = JSON.parse(bankListStr);
+            const bankObj = bankList.data.find(b => b.name === bankName);
+            
+            if (!bankObj) {
+                return callback({ success: false, message: 'Invalid bank name recognized by Paystack.' });
+            }
+
+            // 3. Create Paystack Transfer Recipient
+            const recipientStr = await makeHttpsRequest({
+                hostname: 'api.paystack.co',
+                path: '/transferrecipient',
+                method: 'POST',
+                headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`, 'Content-Type': 'application/json' }
+            }, JSON.stringify({
+                type: 'nuban',
+                name: 'Admin Payout',
+                account_number: accountNumber,
+                bank_code: bankObj.code,
+                currency: 'NGN'
+            }));
+            
+            const recipientData = JSON.parse(recipientStr);
+            if (!recipientData.status) {
+                console.error('Paystack Recipient Error:', recipientData);
+                return callback({ success: false, message: 'Paystack Account Error: ' + recipientData.message });
+            }
+            const recipientCode = recipientData.data.recipient_code;
+
+            // 4. Execute the Transfer
+            const transferStr = await makeHttpsRequest({
+                hostname: 'api.paystack.co',
+                path: '/transfer',
+                method: 'POST',
+                headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`, 'Content-Type': 'application/json' }
+            }, JSON.stringify({
+                source: 'balance',
+                amount: amount * 100, // Convert to kobo
+                recipient: recipientCode,
+                reason: 'Admin Platform Withdrawal'
+            }));
+            
+            const transferData = JSON.parse(transferStr);
+
+            if (!transferData.status) {
+                console.error('Paystack Transfer Error:', transferData);
+                return callback({ success: false, message: 'Transfer Failed: ' + transferData.message });
+            }
+
+            // 5. Only Deduct from DB AFTER Paystack Successfully Processes Transfer
             await pool.query(
                 'INSERT INTO admin_income_logs (type, description, amount) VALUES ($1, $2, $3)',
-                ['WITHDRAWAL', `Withdrawn to ${bankName} (${accountNumber})`, -amount]
+                ['WITHDRAWAL', `Withdrawn to ${bankName} (${accountNumber}) via API`, -amount]
             );
 
             withdrawalLogs.unshift({
@@ -762,10 +831,10 @@ io.on('connection', (socket) => {
             const updatedSumRes = await pool.query('SELECT SUM(amount) AS total FROM admin_income_logs');
             let newRevenue = updatedSumRes.rows[0].total ? parseFloat(updatedSumRes.rows[0].total) : 0;
 
-            callback({ success: true, message: `Successfully withdrew ₦${amount.toLocaleString()} to ${bankName} (${accountNumber})`, newRevenue });
+            callback({ success: true, message: `Successfully withdrew ₦${amount.toLocaleString()} to ${bankName}. Check your bank app!`, newRevenue });
         } catch (err) {
             console.error('Error processing admin withdrawal:', err);
-            callback({ success: false, message: 'Server error processing admin withdrawal.' });
+            callback({ success: false, message: 'Server error processing live Paystack withdrawal.' });
         }
     });
 
