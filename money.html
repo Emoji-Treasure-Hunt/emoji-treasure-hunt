@@ -15,6 +15,7 @@
 
         socket.on('connect', () => {
             console.log("Connected to the game server successfully!");
+            loadAllBanks();
         });
 
         // Security measure: Force logout if logged in from another device/phone
@@ -1710,6 +1711,9 @@
     function showWalletCashier() {
         switchScreen('wallet-screen');
         updateLobbyWallet();
+        
+        loadAllBanks();
+
         let userObj = getCurrentUserObj();
         document.getElementById('cashier-wallet-balance').innerText = `₦${userObj.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
         document.getElementById('deposit-msg').innerHTML = '';
