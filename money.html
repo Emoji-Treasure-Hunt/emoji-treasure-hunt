@@ -30,6 +30,13 @@
             logout();
         });
 
+        socket.on('update_online_count', (data) => {
+            const countEl = document.getElementById('live-online-count');
+            if (countEl) {
+                countEl.innerText = `${data.count} Active Player${data.count === 1 ? '' : 's'}`;
+            }
+        });
+
         function joinGameQueue(stakeAmount, groupName) {
             selectedStake = stakeAmount;
             selectedGroupName = groupName;
@@ -714,6 +721,12 @@
                 <button class="dropdown-item" onclick="closeMenu(); window.open('https://wa.me/2347043626505?text=Hello%20Support,%20I%20need%20help%20with%20Emoji%20Treasure%20Hunt', '_blank')" style="color: #25D366;">📱 WhatsApp 1-on-1</button>
                 <button class="dropdown-item" id="admin-menu-item" onclick="closeMenu(); showAdminDashboard()" style="color: #00ff66; display: none;">📊 Admin Hub</button>
             </div>
+        </div>
+
+        <!-- LIVE ONLINE PLAYERS BADGE -->
+        <div style="background: rgba(0, 243, 255, 0.08); border: 1px solid rgba(0, 243, 255, 0.2); padding: 8px 15px; border-radius: 8px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 0.85rem; color: #94a3b8; text-transform: uppercase; font-family:'Orbitron',sans-serif;">🟢 Online Hunters:</span>
+            <span id="live-online-count" style="font-family: 'Orbitron', sans-serif; font-size: 1rem; color: var(--neon-blue); font-weight: bold;">Loading...</span>
         </div>
         
         <div class="wallet-card">

@@ -292,6 +292,9 @@ let supportTickets = [];
 io.on('connection', (socket) => {
     console.log(`User connected: ${socket.id}`);
 
+    // Broadcast live online count to everyone
+    io.emit('update_online_count', { count: io.engine.clientsCount });
+
     // Register active user session to prevent multi-device login
     socket.on('register_session', (data) => {
         const { username } = data;
@@ -607,10 +610,7 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // Remove any previous queue entry for this user
         waitingPlayers = waitingPlayers.filter(p => p.username !== username);
-
-        // Find an opponent waiting in the EXACT same stake tier
         const opponentIndex = waitingPlayers.findIndex(p => Number(p.stake) === numericStake);
 
         if (opponentIndex !== -1) {
@@ -621,7 +621,6 @@ io.on('connection', (socket) => {
             try {
                 await client.query('BEGIN');
 
-                // Verify both players still have sufficient balance before locking stakes
                 const p1Bal = await client.query('SELECT balance FROM users WHERE username = $1 FOR UPDATE', [player1.username]);
                 const p2Bal = await client.query('SELECT balance FROM users WHERE username = $1 FOR UPDATE', [player2.username]);
 
@@ -691,7 +690,6 @@ io.on('connection', (socket) => {
         const { roomId, winner } = data;
         const room = activeRooms[roomId];
         if (room) {
-            // Immediately remove room from activeRooms to prevent double payouts
             delete activeRooms[roomId];
 
             const client = await pool.connect();
@@ -703,12 +701,10 @@ io.on('connection', (socket) => {
                 const stake = Number(room.stake);
                 const totalPool = stake * 2;
 
-                // Tiered Commission: 8% for ₦100 - ₦1,000 | 5% for VIP (₦5,000+)
                 const commissionRate = stake >= 5000 ? 0.05 : 0.08;
                 const totalCommission = Math.round(totalPool * commissionRate);
                 const netWinnings = totalPool - totalCommission;
 
-                // Credit Winner
                 await client.query(
                     'UPDATE users SET balance = balance + $1 WHERE username = $2',
                     [netWinnings, winner]
@@ -724,7 +720,6 @@ io.on('connection', (socket) => {
                     ['LOSS', stake, `Lost match treasure hunt`, loser]
                 );
 
-                // Check if winner was referred by someone for the 1% Referral Bonus
                 const winnerRes = await client.query('SELECT referred_by FROM users WHERE username = $1', [winner]);
                 const referrerUsername = winnerRes.rows.length > 0 ? winnerRes.rows[0].referred_by : null;
 
@@ -734,7 +729,7 @@ io.on('connection', (socket) => {
                 if (referrerUsername) {
                     const refCheck = await client.query('SELECT email FROM users WHERE username = $1', [referrerUsername]);
                     if (refCheck.rows.length > 0) {
-                        referralBonus = Math.round(totalPool * 0.01); // 1% of total pot goes to referrer
+                        referralBonus = Math.round(totalPool * 0.01);
                         houseNetCut = totalCommission - referralBonus;
 
                         await client.query(
@@ -749,7 +744,6 @@ io.on('connection', (socket) => {
                     }
                 }
 
-                // Log net commission to Admin House Revenue
                 const logDesc = referralBonus > 0
                     ? `${commissionRate * 100}% fee on ₦${totalPool.toLocaleString()} pot (₦${houseNetCut.toLocaleString()} house + ₦${referralBonus.toLocaleString()} ref to ${referrerUsername})`
                     : `${commissionRate * 100}% fee on ₦${totalPool.toLocaleString()} pool match`;
@@ -781,7 +775,6 @@ io.on('connection', (socket) => {
         const { roomId } = data;
         const room = activeRooms[roomId];
         if (room) {
-            // Immediately delete room so second player's timeout event doesn't double-refund!
             delete activeRooms[roomId];
 
             const client = await pool.connect();
@@ -835,13 +828,9 @@ io.on('connection', (socket) => {
         }
     });
 
-    // ==========================================
-    // UPDATED PAYSTACK ADMIN WITHDRAWAL LOGIC
-    // ==========================================
     socket.on('admin_withdraw', async (data, callback) => {
         const { amount, bankName, accountNumber } = data;
         try {
-            // 1. Verify Local Balance
             const sumRes = await pool.query('SELECT SUM(amount) AS total FROM admin_income_logs');
             let currentRevenue = sumRes.rows[0].total ? parseFloat(sumRes.rows[0].total) : 0;
 
@@ -850,7 +839,6 @@ io.on('connection', (socket) => {
                 return;
             }
 
-            // 2. Fetch Bank Code from Paystack (Matches name to code seamlessly)
             const bankListStr = await makeHttpsRequest({
                 hostname: 'api.paystack.co',
                 path: '/bank?country=nigeria',
@@ -864,7 +852,6 @@ io.on('connection', (socket) => {
                 return callback({ success: false, message: 'Invalid bank name recognized by Paystack.' });
             }
 
-            // 3. Create Paystack Transfer Recipient
             const recipientStr = await makeHttpsRequest({
                 hostname: 'api.paystack.co',
                 path: '/transferrecipient',
@@ -885,7 +872,6 @@ io.on('connection', (socket) => {
             }
             const recipientCode = recipientData.data.recipient_code;
 
-            // 4. Execute the Transfer
             const transferStr = await makeHttpsRequest({
                 hostname: 'api.paystack.co',
                 path: '/transfer',
@@ -893,7 +879,7 @@ io.on('connection', (socket) => {
                 headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`, 'Content-Type': 'application/json' }
             }, JSON.stringify({
                 source: 'balance',
-                amount: amount * 100, // Convert to kobo
+                amount: amount * 100,
                 recipient: recipientCode,
                 reason: 'Admin Platform Withdrawal'
             }));
@@ -905,7 +891,6 @@ io.on('connection', (socket) => {
                 return callback({ success: false, message: 'Transfer Failed: ' + transferData.message });
             }
 
-            // 5. Only Deduct from DB AFTER Paystack Successfully Processes Transfer
             await pool.query(
                 'INSERT INTO admin_income_logs (type, description, amount) VALUES ($1, $2, $3)',
                 ['WITHDRAWAL', `Withdrawn to ${bankName} (${accountNumber}) via API`, -amount]
@@ -973,6 +958,7 @@ io.on('connection', (socket) => {
         if (socket.authUsername && activeUserSessions[socket.authUsername] === socket.id) {
             delete activeUserSessions[socket.authUsername];
         }
+        io.emit('update_online_count', { count: io.engine.clientsCount });
     });
 });
 
