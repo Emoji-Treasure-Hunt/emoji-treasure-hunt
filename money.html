@@ -122,7 +122,6 @@
                     gameActive = false;
                     clearInterval(timerInterval);
 
-                    // Only the first player in roomPlayers array needs to trigger timeout, or server deduplicates
                     socket.emit('match_timeout', { roomId: currentRoomId });
                     return;
                 }
@@ -209,8 +208,8 @@
                 document.getElementById('message').innerHTML = `⏱️ Match timed out! It's a draw. Your ₦${selectedStake.toLocaleString()} stake has been refunded.`;
                 document.getElementById('turn-indicator').innerText = "Match Draw (Refunded)";
             } else if (data.winner === currentUsername) {
-                const feeText = data.feeCharged ? `₦${data.feeCharged.toLocaleString()} (${data.commissionPercent}%)` : `commission`;
-                document.getElementById('message').innerHTML = `🎉 Congratulations! You won ₦${data.netWinnings.toLocaleString()} (${feeText} fee applied).`;
+                const feeText = data.feeCharged ? `₦${data.feeCharged.toLocaleString()} (${data.commissionPercent}% commission)` : `commission`;
+                document.getElementById('message').innerHTML = `🎉 Congratulations! You won ₦${data.netWinnings.toLocaleString()} after ${feeText} was deducted.`;
                 document.getElementById('turn-indicator').innerHTML = `<strong style="color: #00ff66;">🎉 Victory! You Won!</strong>`;
             } else {
                 document.getElementById('message').innerHTML = `❌ Game Over! ${data.winner} found the treasure first. ₦${selectedStake.toLocaleString()} stake deducted.`;
@@ -726,12 +725,12 @@
             </div>
         </div>
 
-        <p style="font-size: 0.85rem; color: #94a3b8; text-align: left; margin-bottom: 8px; text-transform: uppercase; font-family:'Orbitron',sans-serif;">Standard Lounges (8% Fee):</p>
+        <p style="font-size: 0.85rem; color: #94a3b8; text-align: left; margin-bottom: 10px; text-transform: uppercase; font-family:'Orbitron',sans-serif;">Select a stake tier to join a live room:</p>
 
         <div class="group-card">
             <div class="group-info">
                 <h3>🎮 Micro Lounge</h3>
-                <p>Stake: ₦100 | Winner Payout: ₦184</p>
+                <p>Stake: ₦100 | 2 Players | Payout: ₦200</p>
                 <p style="color: #00ff66; margin-top: 2px;">🟢 Turn-Based Ready</p>
             </div>
             <button class="group-btn" onclick="joinGameQueue(100, 'Micro Lounge')">Play</button>
@@ -740,7 +739,7 @@
         <div class="group-card">
             <div class="group-info">
                 <h3>🥉 Bronze Lounge</h3>
-                <p>Stake: ₦500 | Winner Payout: ₦920</p>
+                <p>Stake: ₦500 | 2 Players | Payout: ₦1,000</p>
                 <p style="color: #00ff66; margin-top: 2px;">🟢 Turn-Based Ready</p>
             </div>
             <button class="group-btn" onclick="joinGameQueue(500, 'Bronze Lounge')">Play</button>
@@ -749,19 +748,17 @@
         <div class="group-card">
             <div class="group-info">
                 <h3>🥈 Silver Arena</h3>
-                <p>Stake: ₦1,000 | Winner Payout: ₦1,840</p>
+                <p>Stake: ₦1,000 | 2 Players | Payout: ₦2,000</p>
                 <p style="color: #00ff66; margin-top: 2px;">🟢 Turn-Based Ready</p>
             </div>
-            <button class="group-btn" onclick="joinGameQueue(1,000 ? 1000 : 1000, 'Silver Arena')">Play</button>
+            <button class="group-btn" onclick="joinGameQueue(1000, 'Silver Arena')">Play</button>
         </div>
-
-        <p style="font-size: 0.85rem; color: var(--neon-gold); text-align: left; margin: 16px 0 8px 0; text-transform: uppercase; font-family:'Orbitron',sans-serif;">🔥 High-Roller VIP Lounges (Low 5% Fee):</p>
 
         <div class="group-card vip-card">
             <div class="group-info">
                 <h3>🥇 Gold VIP Chamber</h3>
-                <p>Stake: ₦5,000 | Winner Payout: ₦9,500</p>
-                <p style="color: var(--neon-gold); margin-top: 2px;">⚡ VIP 5% Reduced Commission</p>
+                <p>Stake: ₦5,000 | 2 Players | Payout: ₦10,000</p>
+                <p style="color: var(--neon-gold); margin-top: 2px;">🟢 Turn-Based Ready</p>
             </div>
             <button class="group-btn vip-btn" onclick="joinGameQueue(5000, 'Gold VIP Chamber')">Play</button>
         </div>
@@ -769,8 +766,8 @@
         <div class="group-card vip-card">
             <div class="group-info">
                 <h3>💎 Diamond VIP Arena</h3>
-                <p>Stake: ₦10,000 | Winner Payout: ₦19,000</p>
-                <p style="color: var(--neon-gold); margin-top: 2px;">⚡ VIP 5% Reduced Commission</p>
+                <p>Stake: ₦10,000 | 2 Players | Payout: ₦20,000</p>
+                <p style="color: var(--neon-gold); margin-top: 2px;">🟢 Turn-Based Ready</p>
             </div>
             <button class="group-btn vip-btn" onclick="joinGameQueue(10000, 'Diamond VIP Arena')">Play</button>
         </div>
@@ -778,8 +775,8 @@
         <div class="group-card vip-card">
             <div class="group-info">
                 <h3>👑 Executive VIP Lounge</h3>
-                <p>Stake: ₦25,000 | Winner Payout: ₦47,500</p>
-                <p style="color: var(--neon-gold); margin-top: 2px;">⚡ VIP 5% Reduced Commission</p>
+                <p>Stake: ₦25,000 | 2 Players | Payout: ₦50,000</p>
+                <p style="color: var(--neon-gold); margin-top: 2px;">🟢 Turn-Based Ready</p>
             </div>
             <button class="group-btn vip-btn" onclick="joinGameQueue(25000, 'Executive VIP Lounge')">Play</button>
         </div>
