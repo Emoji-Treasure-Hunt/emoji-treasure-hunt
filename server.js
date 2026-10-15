@@ -42,7 +42,7 @@ const makeHttpsRequest = (options, postData = null) => {
 };
 
 // ==========================================
-// INITIALIZE DATABASE TABLES (Withdrawals, Admin Income & Users)
+// INITIALIZE DATABASE TABLES (Withdrawals, Admin Income & Referral Columns)
 // ==========================================
 async function initDB() {
     try {
@@ -67,6 +67,11 @@ async function initDB() {
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
+
+        // Safely add Referral columns to existing users table if they don't exist yet
+        await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by VARCHAR(255) DEFAULT NULL`);
+        await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_earnings DECIMAL(12, 2) DEFAULT 0.00`);
+        await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_count INTEGER DEFAULT 0`);
         
         // Auto-restore the failed 30 NGN Admin withdrawal so the balance matches reality
         await pool.query(`
@@ -77,7 +82,7 @@ async function initDB() {
             )
         `);
 
-        console.log("Database tables verified/created successfully.");
+        console.log("Database tables and referral columns verified/created successfully.");
     } catch (err) {
         console.error("Error initializing database tables:", err);
     }
@@ -307,16 +312,19 @@ io.on('connection', (socket) => {
         try {
             let result;
             if (email) {
-                result = await pool.query('SELECT balance FROM users WHERE email = $1', [email]);
+                result = await pool.query('SELECT balance, referral_earnings, referral_count FROM users WHERE email = $1', [email]);
             }
             if ((!result || result.rows.length === 0) && username) {
-                result = await pool.query('SELECT balance FROM users WHERE username = $1', [username]);
+                result = await pool.query('SELECT balance, referral_earnings, referral_count FROM users WHERE username = $1', [username]);
             }
-            const balance = result && result.rows.length > 0 ? parseFloat(result.rows[0].balance) : 0;
-            callback({ success: true, balance });
+            const row = result && result.rows.length > 0 ? result.rows[0] : null;
+            const balance = row ? parseFloat(row.balance) : 0;
+            const referralEarnings = row && row.referral_earnings ? parseFloat(row.referral_earnings) : 0;
+            const referralCount = row && row.referral_count ? parseInt(row.referral_count, 10) : 0;
+            callback({ success: true, balance, referralEarnings, referralCount });
         } catch (err) {
             console.error("Error fetching balance from DB:", err);
-            callback({ success: false, balance: 0 });
+            callback({ success: false, balance: 0, referralEarnings: 0, referralCount: 0 });
         }
     });
 
@@ -399,6 +407,7 @@ io.on('connection', (socket) => {
         const username = data ? data.username : null;
         const email = data ? (data.email || data.contact) : null;
         const password = data ? data.password : null;
+        const referredByRaw = data && data.referredBy ? data.referredBy.trim() : null;
 
         if (!username || !email || !password) {
             return callback({ success: false, message: 'Missing required registration fields.' });
@@ -410,10 +419,25 @@ io.on('connection', (socket) => {
                 return callback({ success: false, message: 'Username or email already exists.' });
             }
 
+            let validReferrer = null;
+            if (referredByRaw && referredByRaw.toLowerCase() !== username.toLowerCase()) {
+                const refCheck = await pool.query('SELECT username FROM users WHERE LOWER(username) = LOWER($1)', [referredByRaw]);
+                if (refCheck.rows.length > 0) {
+                    validReferrer = refCheck.rows[0].username;
+                }
+            }
+
             await pool.query(
-                `INSERT INTO users (username, email, password, balance) VALUES ($1, $2, $3, 0.00)`,
-                [username, email, password]
+                `INSERT INTO users (username, email, password, balance, referred_by, referral_earnings, referral_count) VALUES ($1, $2, $3, 0.00, $4, 0.00, 0)`,
+                [username, email, password, validReferrer]
             );
+
+            if (validReferrer) {
+                await pool.query(
+                    `UPDATE users SET referral_count = COALESCE(referral_count, 0) + 1 WHERE username = $1`,
+                    [validReferrer]
+                );
+            }
 
             callback({ success: true, message: 'Registration successful!' });
         } catch (err) {
@@ -440,7 +464,9 @@ io.on('connection', (socket) => {
                 user: { 
                     username: user.username, 
                     email: user.email, 
-                    balance: parseFloat(user.balance) 
+                    balance: parseFloat(user.balance),
+                    referralEarnings: user.referral_earnings ? parseFloat(user.referral_earnings) : 0,
+                    referralCount: user.referral_count ? parseInt(user.referral_count, 10) : 0
                 } 
             });
         } catch (err) {
@@ -503,7 +529,7 @@ io.on('connection', (socket) => {
             );
 
             await client.query('COMMIT');
-            callback({ success: true, message: 'Withdrawal request submitted successfully! Pending admin fulfillment.' });
+            callback({ success: true, message: 'Withdrawal request submitted successfully! Expect your payout in 15 mins to 30 mins.' });
         } catch (err) {
             await client.query('ROLLBACK');
             console.error('Manual withdrawal error:', err);
@@ -568,48 +594,65 @@ io.on('connection', (socket) => {
         }
     });
 
+    // ==========================================
+    // UPGRADED STAKE-TIER MATCHMAKING QUEUE
+    // ==========================================
     socket.on('join_queue', async (data) => {
         const { username, stake } = data;
+        const numericStake = Number(stake);
         
         const userRes = await pool.query('SELECT balance FROM users WHERE username = $1', [username]);
-        if (userRes.rows.length === 0 || parseFloat(userRes.rows[0].balance) < stake) {
+        if (userRes.rows.length === 0 || parseFloat(userRes.rows[0].balance) < numericStake) {
             socket.emit('error_message', { message: 'Insufficient wallet balance.' });
             return;
         }
 
+        // Remove any previous queue entry for this user
         waitingPlayers = waitingPlayers.filter(p => p.username !== username);
-        waitingPlayers.push({ socketId: socket.id, username, stake });
 
-        if (waitingPlayers.length >= 2) {
-            const player1 = waitingPlayers.shift();
-            const player2 = waitingPlayers.shift();
+        // Find an opponent waiting in the EXACT same stake tier
+        const opponentIndex = waitingPlayers.findIndex(p => Number(p.stake) === numericStake);
+
+        if (opponentIndex !== -1) {
+            const player1 = waitingPlayers.splice(opponentIndex, 1)[0];
+            const player2 = { socketId: socket.id, username, stake: numericStake };
 
             const client = await pool.connect();
             try {
                 await client.query('BEGIN');
 
-                await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [player1.stake, player1.username]);
-                await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [player2.stake, player2.username]);
+                // Verify both players still have sufficient balance before locking stakes
+                const p1Bal = await client.query('SELECT balance FROM users WHERE username = $1 FOR UPDATE', [player1.username]);
+                const p2Bal = await client.query('SELECT balance FROM users WHERE username = $1 FOR UPDATE', [player2.username]);
+
+                if (p1Bal.rows.length === 0 || parseFloat(p1Bal.rows[0].balance) < numericStake ||
+                    p2Bal.rows.length === 0 || parseFloat(p2Bal.rows[0].balance) < numericStake) {
+                    await client.query('ROLLBACK');
+                    return;
+                }
+
+                await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [numericStake, player1.username]);
+                await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [numericStake, player2.username]);
 
                 await client.query(
                     'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
-                    ['STAKE', player1.stake, `Staked for match queue`, player1.username]
+                    ['STAKE', numericStake, `Staked ₦${numericStake.toLocaleString()} for match`, player1.username]
                 );
                 await client.query(
                     'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
-                    ['STAKE', player2.stake, `Staked for match queue`, player2.username]
+                    ['STAKE', numericStake, `Staked ₦${numericStake.toLocaleString()} for match`, player2.username]
                 );
 
                 await client.query('COMMIT');
 
-                const roomId = 'room_' + Date.now();
+                const roomId = 'room_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
                 const targetEmojis = ['💎', '🔑', '👑', '🪙', '🏆'];
                 const targetEmoji = targetEmojis[Math.floor(Math.random() * targetEmojis.length)];
                 const winningIndex = Math.floor(Math.random() * 40);
 
                 activeRooms[roomId] = {
                     players: [player1.username, player2.username],
-                    stake: player1.stake,
+                    stake: numericStake,
                     targetEmoji,
                     winningIndex,
                     turn: player1.username
@@ -628,6 +671,8 @@ io.on('connection', (socket) => {
             } finally {
                 client.release();
             }
+        } else {
+            waitingPlayers.push({ socketId: socket.id, username, stake: numericStake });
         }
     });
 
@@ -639,21 +684,31 @@ io.on('connection', (socket) => {
         }
     });
 
+    // ==========================================
+    // UPGRADED WINNER PAYOUT (8% Standard / 5% VIP + 1% Referral Split)
+    // ==========================================
     socket.on('player_won', async (data) => {
         const { roomId, winner } = data;
         const room = activeRooms[roomId];
         if (room) {
+            // Immediately remove room from activeRooms to prevent double payouts
+            delete activeRooms[roomId];
+
             const client = await pool.connect();
             try {
                 await client.query('BEGIN');
 
                 const [player1, player2] = room.players;
                 const loser = player1 === winner ? player2 : player1;
-                const stake = room.stake;
+                const stake = Number(room.stake);
                 const totalPool = stake * 2;
-                const houseCut = 15;
-                const netWinnings = totalPool - houseCut;
 
+                // Tiered Commission: 8% for ₦100 - ₦1,000 | 5% for VIP (₦5,000+)
+                const commissionRate = stake >= 5000 ? 0.05 : 0.08;
+                const totalCommission = Math.round(totalPool * commissionRate);
+                const netWinnings = totalPool - totalCommission;
+
+                // Credit Winner
                 await client.query(
                     'UPDATE users SET balance = balance + $1 WHERE username = $2',
                     [netWinnings, winner]
@@ -661,7 +716,7 @@ io.on('connection', (socket) => {
 
                 await client.query(
                     'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
-                    ['WIN', netWinnings, `Won ₦${totalPool} pool match (₦15 fee applied)`, winner]
+                    ['WIN', netWinnings, `Won ₦${totalPool.toLocaleString()} pool (${commissionRate * 100}% fee: ₦${totalCommission.toLocaleString()})`, winner]
                 );
 
                 await client.query(
@@ -669,22 +724,56 @@ io.on('connection', (socket) => {
                     ['LOSS', stake, `Lost match treasure hunt`, loser]
                 );
 
+                // Check if winner was referred by someone for the 1% Referral Bonus
+                const winnerRes = await client.query('SELECT referred_by FROM users WHERE username = $1', [winner]);
+                const referrerUsername = winnerRes.rows.length > 0 ? winnerRes.rows[0].referred_by : null;
+
+                let houseNetCut = totalCommission;
+                let referralBonus = 0;
+
+                if (referrerUsername) {
+                    const refCheck = await client.query('SELECT email FROM users WHERE username = $1', [referrerUsername]);
+                    if (refCheck.rows.length > 0) {
+                        referralBonus = Math.round(totalPool * 0.01); // 1% of total pot goes to referrer
+                        houseNetCut = totalCommission - referralBonus;
+
+                        await client.query(
+                            'UPDATE users SET balance = balance + $1, referral_earnings = COALESCE(referral_earnings, 0) + $1 WHERE username = $2',
+                            [referralBonus, referrerUsername]
+                        );
+
+                        await client.query(
+                            'INSERT INTO transactions (email, type, amount, description) VALUES ($1, $2, $3, $4)',
+                            [refCheck.rows[0].email, 'REFERRAL', referralBonus, `1% Referral bonus from ${winner}'s win in ₦${totalPool.toLocaleString()} pot`]
+                        );
+                    }
+                }
+
+                // Log net commission to Admin House Revenue
+                const logDesc = referralBonus > 0
+                    ? `${commissionRate * 100}% fee on ₦${totalPool.toLocaleString()} pot (₦${houseNetCut.toLocaleString()} house + ₦${referralBonus.toLocaleString()} ref to ${referrerUsername})`
+                    : `${commissionRate * 100}% fee on ₦${totalPool.toLocaleString()} pool match`;
+
                 await client.query(
                     'INSERT INTO admin_income_logs (type, description, amount) VALUES ($1, $2, $3)',
-                    ['COMMISSION', `₦15 flat fee from ₦${totalPool} pool match`, houseCut]
+                    ['COMMISSION', logDesc, houseNetCut]
                 );
 
                 await client.query('COMMIT');
 
-                io.to(roomId).emit('game_over', { winner, reason: 'treasure_found', netWinnings });
+                io.to(roomId).emit('game_over', { 
+                    winner, 
+                    reason: 'treasure_found', 
+                    netWinnings, 
+                    feeCharged: totalCommission,
+                    commissionPercent: commissionRate * 100
+                });
             } catch (err) {
                 await client.query('ROLLBACK');
                 console.error('Error processing winner payout:', err);
             } finally {
                 client.release();
             }
-
-            delete activeRooms[roomId];
         }
     });
 
@@ -692,6 +781,9 @@ io.on('connection', (socket) => {
         const { roomId } = data;
         const room = activeRooms[roomId];
         if (room) {
+            // Immediately delete room so second player's timeout event doesn't double-refund!
+            delete activeRooms[roomId];
+
             const client = await pool.connect();
             try {
                 await client.query('BEGIN');
@@ -713,8 +805,6 @@ io.on('connection', (socket) => {
             } finally {
                 client.release();
             }
-
-            delete activeRooms[roomId];
         }
     });
 
