@@ -4,6 +4,7 @@ const { Server } = require('socket.io');
 const path = require('path');
 const https = require('https');
 const crypto = require('crypto');
+const bcrypt = require('bcrypt');
 const { Resend } = require('resend');
 
 // Import PostgreSQL connection pool
@@ -18,6 +19,8 @@ const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_LIVE_SECRET_KEY;
 
 // Initialize Resend with your Render environment variable
 const resend = new Resend(process.env.RESEND_API_KEY);
+
+const saltRounds = 10;
 
 // Temporary memory store for OTP verification codes
 let otpStorage = {};
@@ -42,7 +45,7 @@ const makeHttpsRequest = (options, postData = null) => {
 };
 
 // ==========================================
-// INITIALIZE DATABASE TABLES (Withdrawals, Admin Income & Referral Columns)
+// INITIALIZE DATABASE TABLES
 // ==========================================
 async function initDB() {
     try {
@@ -90,12 +93,11 @@ async function initDB() {
 initDB();
 
 // ==========================================
-// 1. SECURE PAYSTACK WEBHOOK ROUTE (Must be before express.json)
+// 1. SECURE PAYSTACK WEBHOOK ROUTE
 // ==========================================
 app.post('/paystack-webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     const paystackSignature = req.headers['x-paystack-signature'];
 
-    // Verify the cryptographic signature using the raw body buffer
     const hash = crypto
         .createHmac('sha512', PAYSTACK_SECRET_KEY)
         .update(req.body)
@@ -107,7 +109,7 @@ app.post('/paystack-webhook', express.raw({ type: 'application/json' }), async (
         if (event.event === 'charge.success') {
             const paymentData = event.data;
             const userEmail = paymentData.customer.email;
-            const amountPaid = paymentData.amount / 100; // Convert kobo to Naira
+            const amountPaid = paymentData.amount / 100;
             const reference = paymentData.reference;
 
             const client = await pool.connect();
@@ -155,12 +157,10 @@ app.post('/paystack-webhook', express.raw({ type: 'application/json' }), async (
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve static files / money.html
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'money.html'));
 });
 
-// Payment Initialization Route for Paystack
 app.post('/initialize-payment', (req, res) => {
     const { email, amount } = req.body;
 
@@ -170,7 +170,7 @@ app.post('/initialize-payment', (req, res) => {
 
     const params = JSON.stringify({
         email: email,
-        amount: amount * 100 // Convert Naira to Kobo
+        amount: amount * 100
     });
 
     const options = {
@@ -210,7 +210,6 @@ app.post('/initialize-payment', (req, res) => {
     reqPaystack.end();
 });
 
-// Dynamic Bank List Route (Fetches all banks live from Paystack)
 app.get('/get-banks', (req, res) => {
     const options = {
         hostname: 'api.paystack.co',
@@ -243,7 +242,6 @@ app.get('/get-banks', (req, res) => {
     reqPaystack.end();
 });
 
-// Verify Bank Account Route using dynamic bank codes
 app.post('/verify-bank-account', (req, res) => {
     const { accountNumber, bankCode } = req.body;
 
@@ -292,10 +290,8 @@ let supportTickets = [];
 io.on('connection', (socket) => {
     console.log(`User connected: ${socket.id}`);
 
-    // Broadcast live online count to everyone
     io.emit('update_online_count', { count: io.engine.clientsCount });
 
-    // Broadcast queue and active room stats for lounges upon connection
     const broadcastLoungeStats = () => {
         let waitingCounts = {};
         let activeCounts = {};
@@ -311,10 +307,8 @@ io.on('connection', (socket) => {
         io.emit('lounge_stats_update', { waitingCounts, activeCounts });
     };
 
-    // Send initial stats to newly connected socket
     broadcastLoungeStats();
 
-    // Register active user session to prevent multi-device login
     socket.on('register_session', (data) => {
         const { username } = data;
         if (!username) return;
@@ -350,7 +344,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Fetch real top hunters from PostgreSQL database
     socket.on('get_leaderboard', async (callback) => {
         try {
             const result = await pool.query(`
@@ -418,18 +411,13 @@ io.on('connection', (socket) => {
 
             if (emailResult.error) {
                 console.warn('Resend API restricted delivery, falling back to console log:', emailResult.error);
-                console.log(`========================================`);
                 console.log(`[TEST MODE OTP] Code for ${email}: ${verificationCode}`);
-                console.log(`========================================`);
             }
 
-            console.log(`Verification code processed for ${email}`);
             callback({ success: true, message: 'Verification code generated successfully!' });
         } catch (err) {
             console.warn('Resend exception, using console fallback:', err);
-            console.log(`========================================`);
             console.log(`[TEST MODE OTP] Code for ${email}: ${verificationCode}`);
-            console.log(`========================================`);
             callback({ success: true, message: 'Verification code generated successfully!' });
         }
     });
@@ -468,9 +456,11 @@ io.on('connection', (socket) => {
                 }
             }
 
+            const hashedPassword = await bcrypt.hash(password, saltRounds);
+
             await pool.query(
                 `INSERT INTO users (username, email, password, balance, referred_by, referral_earnings, referral_count) VALUES ($1, $2, $3, 0.00, $4, 0.00, 0)`,
-                [username, email, password, validReferrer]
+                [username, email, hashedPassword, validReferrer]
             );
 
             if (validReferrer) {
@@ -496,7 +486,8 @@ io.on('connection', (socket) => {
             }
 
             const user = result.rows[0];
-            if (user.password !== password) {
+            const match = await bcrypt.compare(password, user.password);
+            if (!match) {
                 return callback({ success: false, message: 'Invalid username or password.' });
             }
 
@@ -520,11 +511,17 @@ io.on('connection', (socket) => {
         const { username, oldPassword, newPassword } = data;
         try {
             const result = await pool.query('SELECT password FROM users WHERE username = $1', [username]);
-            if (result.rows.length === 0 || result.rows[0].password !== oldPassword) {
+            if (result.rows.length === 0) {
+                return callback({ success: false, message: 'User not found.' });
+            }
+
+            const isOldMatch = await bcrypt.compare(oldPassword, result.rows[0].password);
+            if (!isOldMatch) {
                 return callback({ success: false, message: 'Current password is incorrect.' });
             }
 
-            await pool.query('UPDATE users SET password = $1 WHERE username = $2', [newPassword, username]);
+            const hashedNewPassword = await bcrypt.hash(newPassword, saltRounds);
+            await pool.query('UPDATE users SET password = $1 WHERE username = $2', [hashedNewPassword, username]);
             callback({ success: true, message: 'Password updated successfully!' });
         } catch (err) {
             console.error('Password change error:', err);
@@ -635,9 +632,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // ==========================================
-    // UPGRADED STAKE-TIER MATCHMAKING QUEUE
-    // ==========================================
     socket.on('join_queue', async (data) => {
         const { username, stake } = data;
         const numericStake = Number(stake);
@@ -724,9 +718,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // ==========================================
-    // UPGRADED WINNER PAYOUT (8% Standard / 5% VIP + 1% Referral Split)
-    // ==========================================
     socket.on('player_won', async (data) => {
         const { roomId, winner } = data;
         const room = activeRooms[roomId];
@@ -911,7 +902,6 @@ io.on('connection', (socket) => {
             
             const recipientData = JSON.parse(recipientStr);
             if (!recipientData.status) {
-                console.error('Paystack Recipient Error:', recipientData);
                 return callback({ success: false, message: 'Paystack Account Error: ' + recipientData.message });
             }
             const recipientCode = recipientData.data.recipient_code;
@@ -931,7 +921,6 @@ io.on('connection', (socket) => {
             const transferData = JSON.parse(transferStr);
 
             if (!transferData.status) {
-                console.error('Paystack Transfer Error:', transferData);
                 return callback({ success: false, message: 'Transfer Failed: ' + transferData.message });
             }
 
