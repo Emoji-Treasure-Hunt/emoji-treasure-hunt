@@ -1027,7 +1027,7 @@
     <!-- LEADERBOARD SCREEN -->
     <div id="leaderboard-screen" class="screen-section">
         <h1>🏆 Top Emoji Hunters</h1>
-        <div class="subtitle">Ranked by Total Wins & Earnings</div>
+        <div class="subtitle">Ranked by Wallet Balance & Earnings</div>
         
         <div class="leaderboard-list" id="leaderboard-container"></div>
 
@@ -2028,56 +2028,38 @@
 
     function showLeaderboard() {
         switchScreen('leaderboard-screen');
-        let users = getUsers();
-        let userArray = Object.keys(users).map(username => ({
-            username: username,
-            totalWins: users[username].totalWins || 0,
-            totalWon: users[username].totalWon || 0
-        }));
-
-        let mockHunters = [
-            { username: "AlexHunter", totalWins: 42, totalWon: 35000.00 },
-            { username: "Sarah_G", totalWins: 38, totalWon: 28500.00 },
-            { username: "CryptoKing99", totalWins: 31, totalWon: 21000.00 },
-            { username: "FastFingers", totalWins: 25, totalWon: 17500.00 },
-            { username: "LuckyStrike", totalWins: 22, totalWon: 14000.00 }
-        ];
-
-        userArray.forEach(ua => {
-            if (!mockHunters.some(mh => mh.username === ua.username)) {
-                mockHunters.push(ua);
-            } else {
-                let existing = mockHunters.find(mh => mh.username === ua.username);
-                existing.totalWins = ua.totalWins;
-                existing.totalWon = ua.totalWon;
-            }
-        });
-
-        mockHunters.sort((a, b) => b.totalWins - a.totalWins);
-        const top20 = mockHunters.slice(0, 20);
         const container = document.getElementById('leaderboard-container');
-        container.innerHTML = '';
+        container.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 20px;">Loading top hunters from database...</div>`;
 
-        top20.forEach((user, index) => {
-            let rankClass = '';
-            let medal = `#${index + 1}`;
-            if (index === 0) { rankClass = 'rank-1'; medal = '🥇 1st'; }
-            else if (index === 1) { rankClass = 'rank-2'; medal = '🥈 2nd'; }
-            else if (index === 2) { rankClass = 'rank-3'; medal = '🥉 3rd'; }
+        socket.emit('get_leaderboard', (response) => {
+            container.innerHTML = '';
 
-            const item = document.createElement('div');
-            item.classList.add('leaderboard-item');
-            item.innerHTML = `
-                <div>
-                    <span class="${rankClass}">${medal}</span> 
-                    <strong>${user.username}</strong>
-                </div>
-                <div style="text-align: right; color: var(--neon-blue);">
-                    <strong>${user.totalWins} Wins</strong><br>
-                    <span style="font-size: 0.75rem; color: #94a3b8;">₦${user.totalWon.toLocaleString()}</span>
-                </div>
-            `;
-            container.appendChild(item);
+            if (!response || !response.success || !response.leaderboard || response.leaderboard.length === 0) {
+                container.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 20px;">No hunters found on the leaderboard yet. Be the first!</div>`;
+                return;
+            }
+
+            response.leaderboard.forEach((user, index) => {
+                let rankClass = '';
+                let medal = `#${index + 1}`;
+                if (index === 0) { rankClass = 'rank-1'; medal = '🥇 1st'; }
+                else if (index === 1) { rankClass = 'rank-2'; medal = '🥈 2nd'; }
+                else if (index === 2) { rankClass = 'rank-3'; medal = '🥉 3rd'; }
+
+                const item = document.createElement('div');
+                item.classList.add('leaderboard-item');
+                item.innerHTML = `
+                    <div>
+                        <span class="${rankClass}">${medal}</span> 
+                        <strong>${user.username}</strong>
+                    </div>
+                    <div style="text-align: right; color: var(--neon-blue);">
+                        <strong>₦${parseFloat(user.balance).toLocaleString('en-NG', {minimumFractionDigits: 2})}</strong><br>
+                        <span style="font-size: 0.75rem; color: #94a3b8;">Balance</span>
+                    </div>
+                `;
+                container.appendChild(item);
+            });
         });
     }
 

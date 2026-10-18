@@ -350,6 +350,25 @@ io.on('connection', (socket) => {
         }
     });
 
+    // Fetch real top hunters from PostgreSQL database
+    socket.on('get_leaderboard', async (callback) => {
+        try {
+            const result = await pool.query(`
+                SELECT username, 
+                       COALESCE(referral_count, 0) as referral_count, 
+                       COALESCE(referral_earnings, 0) as referral_earnings,
+                       balance 
+                FROM users 
+                ORDER BY balance DESC 
+                LIMIT 20
+            `);
+            callback({ success: true, leaderboard: result.rows });
+        } catch (err) {
+            console.error('Error fetching leaderboard from DB:', err);
+            callback({ success: false, leaderboard: [] });
+        }
+    });
+
     socket.on('get_user_transactions', async (data, callback) => {
         const { email, username } = data;
         try {
