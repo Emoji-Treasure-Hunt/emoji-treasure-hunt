@@ -49,9 +49,6 @@ const makeHttpsRequest = (options, postData = null) => {
 // ==========================================
 async function initDB() {
     try {
-        // TEMPORARY WIPE: Clears old test users and transactions for bcrypt transition
-        await pool.query(`TRUNCATE TABLE users, transactions, withdrawals RESTART IDENTITY CASCADE`);
-
         await pool.query(`
             CREATE TABLE IF NOT EXISTS withdrawals (
                 id SERIAL PRIMARY KEY,
