@@ -365,7 +365,7 @@ io.on('connection', (socket) => {
 
         try {
             const emailResult = await resend.emails.send({
-                from: 'Emoji Treasure Hunt <onboarding@resend.dev>',
+                from: 'Emoji Treasure Hunt <support@emojitreasurehunt.com>',
                 to: [email],
                 subject: 'Verify Your Email Address',
                 html: `
