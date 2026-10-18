@@ -22,6 +22,7 @@
             console.log("Connected to the game server successfully!");
             loadAllBanks();
             checkUrlReferral();
+            checkPersistedSession();
         });
 
         // Security measure: Force logout if logged in from another device/phone
@@ -54,6 +55,24 @@
                 }
             });
         });
+
+        function checkPersistedSession() {
+            const savedUser = localStorage.getItem('emoji_current_user_secure');
+            if (savedUser && !currentUser) {
+                currentUser = savedUser;
+                socket.emit('register_session', { username: savedUser });
+                switchScreen('lobby-screen');
+                document.getElementById('lobby-display-user').innerText = savedUser;
+                updateLobbyWallet();
+
+                const adminMenuItem = document.getElementById('admin-menu-item');
+                if (savedUser.toLowerCase() === ADMIN_USERNAME.toLowerCase()) {
+                    adminMenuItem.style.display = 'block';
+                } else {
+                    adminMenuItem.style.display = 'none';
+                }
+            }
+        }
 
         function joinGameQueue(stakeAmount, groupName) {
             selectedStake = stakeAmount;
