@@ -295,6 +295,25 @@ io.on('connection', (socket) => {
     // Broadcast live online count to everyone
     io.emit('update_online_count', { count: io.engine.clientsCount });
 
+    // Broadcast queue and active room stats for lounges upon connection
+    const broadcastLoungeStats = () => {
+        let waitingCounts = {};
+        let activeCounts = {};
+
+        waitingPlayers.forEach(p => {
+            waitingCounts[p.stake] = (waitingCounts[p.stake] || 0) + 1;
+        });
+
+        Object.values(activeRooms).forEach(room => {
+            activeCounts[room.stake] = (activeCounts[room.stake] || 0) + room.players.length;
+        });
+
+        io.emit('lounge_stats_update', { waitingCounts, activeCounts });
+    };
+
+    // Send initial stats to newly connected socket
+    broadcastLoungeStats();
+
     // Register active user session to prevent multi-device login
     socket.on('register_session', (data) => {
         const { username } = data;
@@ -627,6 +646,7 @@ io.on('connection', (socket) => {
                 if (p1Bal.rows.length === 0 || parseFloat(p1Bal.rows[0].balance) < numericStake ||
                     p2Bal.rows.length === 0 || parseFloat(p2Bal.rows[0].balance) < numericStake) {
                     await client.query('ROLLBACK');
+                    broadcastLoungeStats();
                     return;
                 }
 
@@ -669,9 +689,11 @@ io.on('connection', (socket) => {
                 console.error('Error starting match queue:', err);
             } finally {
                 client.release();
+                broadcastLoungeStats();
             }
         } else {
             waitingPlayers.push({ socketId: socket.id, username, stake: numericStake });
+            broadcastLoungeStats();
         }
     });
 
@@ -767,6 +789,7 @@ io.on('connection', (socket) => {
                 console.error('Error processing winner payout:', err);
             } finally {
                 client.release();
+                broadcastLoungeStats();
             }
         }
     });
@@ -797,6 +820,7 @@ io.on('connection', (socket) => {
                 console.error('Error processing match timeout refunds:', err);
             } finally {
                 client.release();
+                broadcastLoungeStats();
             }
         }
     });
@@ -804,6 +828,7 @@ io.on('connection', (socket) => {
     socket.on('leave_queue', (data) => {
         const { username } = data;
         waitingPlayers = waitingPlayers.filter(p => p.username !== username);
+        broadcastLoungeStats();
     });
 
     socket.on('get_house_revenue', async (callback) => {
@@ -959,6 +984,7 @@ io.on('connection', (socket) => {
             delete activeUserSessions[socket.authUsername];
         }
         io.emit('update_online_count', { count: io.engine.clientsCount });
+        broadcastLoungeStats();
     });
 });
 
