@@ -281,7 +281,7 @@ app.post('/verify-bank-account', (req, res) => {
 });
 
 // ==========================================
-// 3. MULTI-GAME ENGINE HELPERS (TREASURE & WHOT)
+// 3. MULTI-GAME ENGINE HELPERS (TREASURE, WHOT & LUDO)
 // ==========================================
 let waitingPlayers = [];
 let activeRooms = {};
@@ -389,7 +389,7 @@ async function settleMatchWinner(room, winner, gameLabel = 'Emoji Treasure Hunt'
     }
 }
 
-// Emit sanitized Whot state to each player (hides opponent's exact cards)
+// Emit sanitized Whot state to each player
 function emitWhotState(roomId) {
     const room = activeRooms[roomId];
     if (!room || room.gameType !== 'whot') return;
@@ -428,10 +428,14 @@ io.on('connection', (socket) => {
         let activeCounts = {};
         let whotWaitingCounts = {};
         let whotActiveCounts = {};
+        let ludoWaitingCounts = {};
+        let ludoActiveCounts = {};
 
         waitingPlayers.forEach(p => {
             if (p.gameType === 'whot') {
                 whotWaitingCounts[p.stake] = (whotWaitingCounts[p.stake] || 0) + 1;
+            } else if (p.gameType === 'ludo') {
+                ludoWaitingCounts[p.stake] = (ludoWaitingCounts[p.stake] || 0) + 1;
             } else {
                 waitingCounts[p.stake] = (waitingCounts[p.stake] || 0) + 1;
             }
@@ -440,12 +444,14 @@ io.on('connection', (socket) => {
         Object.values(activeRooms).forEach(room => {
             if (room.gameType === 'whot') {
                 whotActiveCounts[room.stake] = (whotActiveCounts[room.stake] || 0) + room.players.length;
+            } else if (room.gameType === 'ludo') {
+                ludoActiveCounts[room.stake] = (ludoActiveCounts[room.stake] || 0) + room.players.length;
             } else {
                 activeCounts[room.stake] = (activeCounts[room.stake] || 0) + room.players.length;
             }
         });
 
-        io.emit('lounge_stats_update', { waitingCounts, activeCounts, whotWaitingCounts, whotActiveCounts });
+        io.emit('lounge_stats_update', { waitingCounts, activeCounts, whotWaitingCounts, whotActiveCounts, ludoWaitingCounts, ludoActiveCounts });
     };
 
     broadcastLoungeStats();
@@ -774,7 +780,7 @@ io.on('connection', (socket) => {
     });
 
     // ==========================================
-    // UNIFIED MULTI-GAME QUEUE (TREASURE & WHOT)
+    // UNIFIED MULTI-GAME QUEUE (TREASURE, WHOT & LUDO)
     // ==========================================
     socket.on('join_queue', async (data) => {
         const { username, stake, gameType = 'treasure' } = data;
@@ -810,7 +816,9 @@ io.on('connection', (socket) => {
                 await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [numericStake, player1.username]);
                 await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [numericStake, player2.username]);
 
-                const gameLabel = gameType === 'whot' ? 'Naija Whot' : 'Emoji Treasure Hunt';
+                let gameLabel = 'Emoji Treasure Hunt';
+                if (gameType === 'whot') gameLabel = 'Naija Whot';
+                if (gameType === 'ludo') gameLabel = 'Ludo Blitz';
 
                 await client.query(
                     'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
@@ -834,7 +842,6 @@ io.on('connection', (socket) => {
                     const hand1 = deck.splice(0, 5);
                     const hand2 = deck.splice(0, 5);
 
-                    // Pick first non-special card for top of pile
                     let firstCardIdx = deck.findIndex(c => c.shape !== 'whot' && ![1, 2, 8, 14].includes(c.number));
                     if (firstCardIdx === -1) firstCardIdx = 0;
                     const topCard = deck.splice(firstCardIdx, 1)[0];
@@ -857,6 +864,25 @@ io.on('connection', (socket) => {
                     };
 
                     emitWhotState(roomId);
+                } else if (gameType === 'ludo') {
+                    activeRooms[roomId] = {
+                        gameType: 'ludo',
+                        players: [player1.username, player2.username],
+                        stake: numericStake,
+                        positions: {
+                            [player1.username]: [0, 0],
+                            [player2.username]: [0, 0]
+                        },
+                        turn: player1.username,
+                        lastDice: null,
+                        lastAction: 'Ludo match started! Roll the dice.'
+                    };
+
+                    io.to(roomId).emit('ludo_state_update', {
+                        positions: activeRooms[roomId].positions,
+                        turn: activeRooms[roomId].turn,
+                        lastAction: activeRooms[roomId].lastAction
+                    });
                 } else {
                     const targetEmojis = ['💎', '🔑', '👑', '🪙', '🏆'];
                     const targetEmoji = targetEmojis[Math.floor(Math.random() * targetEmojis.length)];
@@ -952,7 +978,7 @@ io.on('connection', (socket) => {
     });
 
     // ==========================================
-    // NAIJA WHOT 1V1 EVENTS
+    // NAIJA WHOT 1V1 EVENTS & 8s TIMEOUT
     // ==========================================
     socket.on('whot_play_card', async (data) => {
         const { roomId, username, cardIndex, chosenShape } = data;
@@ -966,13 +992,11 @@ io.on('connection', (socket) => {
         const card = playerHand[cardIndex];
         const opponent = room.players.find(p => p !== username);
 
-        // If player is facing a Pick 2 penalty, they must draw from market
         if (room.pendingPick > 0) {
             socket.emit('whot_invalid_move', { message: `You must draw ${room.pendingPick} cards from the market!` });
             return;
         }
 
-        // Validate move against topCard or calledShape
         let isValid = false;
         if (card.shape === 'whot') {
             isValid = true;
@@ -987,13 +1011,11 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // Remove card from hand & place on top of discard pile
         playerHand.splice(cardIndex, 1);
         room.topCard = card;
         room.discardPile.push(card);
         room.calledShape = null;
 
-        // Check for immediate Victory (Empty Hand)
         if (playerHand.length === 0) {
             delete activeRooms[roomId];
             try {
@@ -1013,7 +1035,6 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // Apply Special Naija Whot Card Rules
         if (card.shape === 'whot') {
             const validShapes = ['circle', 'triangle', 'cross', 'square', 'star'];
             const shapeToCall = validShapes.includes(chosenShape) ? chosenShape : 'circle';
@@ -1021,20 +1042,16 @@ io.on('connection', (socket) => {
             room.turn = opponent;
             room.lastAction = `${username} played WHOT 20 and called ${shapeToCall.toUpperCase()}!`;
         } else if (card.number === 1) {
-            // HOLD ON: Player plays again
             room.turn = username;
             room.lastAction = `${username} played HOLD ON (1)! ${username} plays again!`;
         } else if (card.number === 8) {
-            // SUSPENSION: Opponent skipped, player plays again
             room.turn = username;
             room.lastAction = `${username} played SUSPENSION (8)! ${opponent} is skipped!`;
         } else if (card.number === 2) {
-            // PICK TWO
             room.pendingPick = 2;
             room.turn = opponent;
             room.lastAction = `${username} played PICK TWO (2)! ${opponent} must draw 2 cards!`;
         } else if (card.number === 14) {
-            // GENERAL MARKET: Opponent draws 1 immediately and loses turn
             room.pendingPick = 1;
             room.turn = opponent;
             room.lastAction = `${username} played GENERAL MARKET (14)! ${opponent} must draw 1 card!`;
@@ -1056,7 +1073,6 @@ io.on('connection', (socket) => {
         const drawCount = room.pendingPick > 0 ? room.pendingPick : 1;
 
         for (let i = 0; i < drawCount; i++) {
-            // If market is empty, reshuffle discard pile except top card
             if (room.deck.length === 0 && room.discardPile.length > 1) {
                 const currentTop = room.discardPile.pop();
                 room.deck = room.discardPile.splice(0);
@@ -1076,6 +1092,80 @@ io.on('connection', (socket) => {
         room.lastAction = `${username} drew ${drawCount} card${drawCount > 1 ? 's' : ''} from the market.`;
 
         emitWhotState(roomId);
+    });
+
+    socket.on('whot_turn_timeout', (data) => {
+        const { roomId, username } = data;
+        const room = activeRooms[roomId];
+        if (!room || room.gameType !== 'whot') return;
+        if (room.turn !== username) return;
+
+        const opponent = room.players.find(p => p !== username);
+        if (room.deck.length > 0) {
+            room.hands[username].push(room.deck.pop());
+        }
+        room.turn = opponent;
+        room.lastAction = `⏱️ ${username} timed out! Auto-drew 1 card. Turn passed to ${opponent}.`;
+        emitWhotState(roomId);
+    });
+
+    // ==========================================
+    // LUDO BLITZ GAME ENGINE
+    // ==========================================
+    socket.on('ludo_roll_dice', (data) => {
+        const { roomId, username } = data;
+        const room = activeRooms[roomId];
+        if (!room || room.gameType !== 'ludo') return;
+        if (room.turn !== username) return;
+
+        const diceRoll = Math.floor(Math.random() * 6) + 1;
+        room.lastDice = diceRoll;
+
+        socket.emit('ludo_dice_rolled', { diceRoll });
+        io.to(roomId).emit('ludo_action_log', { message: `${username} rolled a ${diceRoll} 🎲` });
+    });
+
+    socket.on('ludo_move_token', async (data) => {
+        const { roomId, username, tokenIndex } = data;
+        const room = activeRooms[roomId];
+        if (!room || room.gameType !== 'ludo') return;
+        if (room.turn !== username) return;
+
+        const opponent = room.players.find(p => p !== username);
+        const playerTokens = room.positions[username];
+        const dice = room.lastDice || 1;
+
+        playerTokens[tokenIndex] += dice;
+        if (playerTokens[tokenIndex] > 33) {
+            playerTokens[tokenIndex] = 33;
+        }
+
+        if (playerTokens.every(pos => pos === 33)) {
+            delete activeRooms[roomId];
+            try {
+                const payoutInfo = await settleMatchWinner(room, username, 'Ludo Blitz');
+                io.to(roomId).emit('ludo_game_over', {
+                    winner: username,
+                    netWinnings: payoutInfo.netWinnings,
+                    feeCharged: payoutInfo.feeCharged,
+                    commissionPercent: payoutInfo.commissionPercent
+                });
+            } catch (err) {
+                console.error('Error settling Ludo winner:', err);
+            } finally {
+                broadcastLoungeStats();
+            }
+            return;
+        }
+
+        room.turn = opponent;
+        room.lastDice = null;
+
+        io.to(roomId).emit('ludo_state_update', {
+            positions: room.positions,
+            turn: room.turn,
+            lastAction: `${username} moved token #${tokenIndex + 1}. Now ${opponent}'s turn!`
+        });
     });
 
     socket.on('leave_queue', (data) => {
@@ -1235,7 +1325,6 @@ io.on('connection', (socket) => {
     socket.on('disconnect', async () => {
         waitingPlayers = waitingPlayers.filter(p => p.socketId !== socket.id);
 
-        // If a player disconnects during an active Whot match, forfeit to opponent
         if (socket.authUsername) {
             for (const [roomId, room] of Object.entries(activeRooms)) {
                 if (room.gameType === 'whot' && room.players.includes(socket.authUsername)) {
