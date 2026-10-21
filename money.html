@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Emoji Treasure Hunt</title>
+    <title>Emoji Treasure Hunt & Skill Arcade</title>
     
     <!-- ESPORTS TYPOGRAPHY -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -15,255 +15,6 @@
 
     <!-- SOCKET.IO & SERVER CONNECTION SCRIPTS -->
     <script src="https://cdn.socket.io/4.4.1/socket.io.min.js"></script>
-    <script>
-        const socket = io(window.location.origin);
-
-        socket.on('connect', () => {
-            console.log("Connected to the game server successfully!");
-            loadAllBanks();
-            checkUrlReferral();
-            checkPersistedSession();
-        });
-
-        // Security measure: Force logout if logged in from another device/phone
-        socket.on('force_logout', (data) => {
-            alert(data.message || 'Your account was logged into from another device.');
-            logout();
-        });
-
-        socket.on('update_online_count', (data) => {
-            const countEl = document.getElementById('live-online-count');
-            if (countEl) {
-                countEl.innerText = `${data.count} Active Player${data.count === 1 ? '' : 's'}`;
-            }
-        });
-
-        // Listen for live room and queue stats update
-        socket.on('lounge_stats_update', (data) => {
-            const { waitingCounts, activeCounts } = data;
-            
-            // Map stake amounts to their respective DOM element IDs
-            const stakeTiers = [100, 500, 1000, 5000, 10000, 25000];
-            
-            stakeTiers.forEach(stake => {
-                const waiting = waitingCounts && waitingCounts[stake] ? waitingCounts[stake] : 0;
-                const active = activeCounts && activeCounts[stake] ? activeCounts[stake] : 0;
-                
-                const statEl = document.getElementById(`lounge-stat-${stake}`);
-                if (statEl) {
-                    statEl.innerHTML = `🟢 ${active} Active Hunters | ⏳ ${waiting} Waiting`;
-                }
-            });
-        });
-
-        function checkPersistedSession() {
-            const savedUser = localStorage.getItem('emoji_current_user_secure');
-            if (savedUser && !currentUser) {
-                currentUser = savedUser;
-                socket.emit('register_session', { username: savedUser });
-                switchScreen('lobby-screen');
-                document.getElementById('lobby-display-user').innerText = savedUser;
-                updateLobbyWallet();
-
-                const adminMenuItem = document.getElementById('admin-menu-item');
-                if (savedUser.toLowerCase() === ADMIN_USERNAME.toLowerCase()) {
-                    adminMenuItem.style.display = 'block';
-                } else {
-                    adminMenuItem.style.display = 'none';
-                }
-            }
-        }
-
-        function joinGameQueue(stakeAmount, groupName) {
-            selectedStake = stakeAmount;
-            selectedGroupName = groupName;
-
-            const username = localStorage.getItem('emoji_current_user_secure');
-
-            if (!username) {
-                alert("Please log in first!");
-                return;
-            }
-
-            let userObj = getCurrentUserObj();
-            
-            if (userObj.balance < stakeAmount) {
-                alert(`Insufficient wallet balance! You need at least ₦${stakeAmount.toLocaleString()} to participate in the ${groupName}.`);
-                return;
-            }
-
-            switchScreen('game-screen');
-            document.getElementById('display-user').innerText = username;
-            document.getElementById('active-group-title').innerText = groupName;
-            document.getElementById('current-stake-display').innerText = stakeAmount.toLocaleString();
-            updateWalletDisplay();
-            
-            document.getElementById('message').innerText = "⏳ Looking for an opponent... Please wait!";
-            document.getElementById('turn-indicator').innerText = "Searching queue...";
-
-            const gridEl = document.getElementById('game-grid');
-            gridEl.innerHTML = '';
-            for (let i = 0; i < 40; i++) {
-                const btn = document.createElement('button');
-                btn.classList.add('box');
-                btn.innerText = '📦';
-                btn.disabled = true;
-                gridEl.appendChild(btn);
-            }
-
-            gameActive = false;
-
-            socket.emit('join_queue', {
-                username: username,
-                stake: stakeAmount
-            });
-        }
-
-        socket.on('match_found', (data) => {
-            currentRoomId = data.roomId;
-            const currentUsername = localStorage.getItem('emoji_current_user_secure');
-            roomPlayers = data.players; 
-            const opponentName = roomPlayers.find(p => p !== currentUsername) || 'Opponent';
-            
-            currentTurnPlayer = roomPlayers[0];
-            isMyTurn = (currentTurnPlayer === currentUsername);
-
-            document.getElementById('message').innerText = `🎉 Match found against ${opponentName}! Game starting...`;
-            
-            currentTreasureEmoji = data.targetEmoji;
-            treasureIndex = data.winningIndex;
-            document.getElementById('current-target-emoji').innerText = currentTreasureEmoji;
-
-            gameActive = true;
-            matchTimeLeft = 60;
-            turnTimeLeft = 6;
-            
-            document.getElementById('timer').innerText = matchTimeLeft + 's';
-            updateTurnDisplay();
-            
-            const boxes = document.querySelectorAll('.box');
-            boxes.forEach((box, idx) => {
-                box.innerText = '📦';
-                box.classList.remove('revealed', 'winner');
-                box.disabled = !isMyTurn;
-                box.onclick = () => {
-                    if (isMyTurn && gameActive) {
-                        selectBox(idx, box);
-                    }
-                };
-            });
-
-            clearInterval(timerInterval);
-            timerInterval = setInterval(() => {
-                if (!gameActive) return;
-
-                matchTimeLeft--;
-                turnTimeLeft--;
-
-                if (matchTimeLeft <= 0) {
-                    document.getElementById('timer').innerText = '0s';
-                    matchTimeLeft = 0;
-                    gameActive = false;
-                    clearInterval(timerInterval);
-
-                    socket.emit('match_timeout', { roomId: currentRoomId });
-                    return;
-                }
-
-                document.getElementById('timer').innerText = matchTimeLeft + 's';
-                updateTurnDisplay();
-
-                if (turnTimeLeft <= 0 && gameActive) {
-                    passTurnToOpponent();
-                }
-            }, 1000);
-        });
-
-        function updateTurnDisplay() {
-            const turnEl = document.getElementById('turn-indicator');
-            if (!gameActive) return;
-
-            if (isMyTurn) {
-                turnEl.innerHTML = `👉 <strong style="color: #00ff66;">YOUR TURN!</strong> (${turnTimeLeft}s left)`;
-                turnEl.style.borderColor = '#00ff66';
-            } else {
-                turnEl.innerHTML = `⏳ <strong style="color: #ff003c;">OPPONENT'S TURN</strong> (${turnTimeLeft}s left)`;
-                turnEl.style.borderColor = '#ff003c';
-            }
-        }
-
-        function passTurnToOpponent() {
-            if (!gameActive) return;
-            const currentUsername = localStorage.getItem('emoji_current_user_secure');
-            currentTurnPlayer = roomPlayers.find(p => p !== currentTurnPlayer);
-            isMyTurn = (currentTurnPlayer === currentUsername);
-            turnTimeLeft = 6; 
-
-            updateTurnDisplay();
-            const boxes = document.querySelectorAll('.box');
-            boxes.forEach((box, idx) => {
-                if (!box.classList.contains('revealed')) {
-                    box.disabled = !isMyTurn;
-                }
-            });
-
-            document.getElementById('message').innerText = isMyTurn ? "⏱️ Opponent timed out! It's your turn now!" : "⏱️ Your turn expired! Waiting for opponent...";
-        }
-
-        socket.on('opponent_played', (data) => {
-            if (!gameActive) return;
-            const boxes = document.querySelectorAll('.box');
-            const box = boxes[data.index];
-            if (box && !box.classList.contains('revealed')) {
-                box.classList.add('revealed');
-                box.innerText = data.decoyEmoji;
-                box.disabled = true;
-            }
-            const currentUsername = localStorage.getItem('emoji_current_user_secure');
-            currentTurnPlayer = currentUsername;
-            isMyTurn = true;
-            turnTimeLeft = 6;
-            updateTurnDisplay();
-            boxes.forEach((b, idx) => {
-                if (!b.classList.contains('revealed')) {
-                    b.disabled = false;
-                }
-            });
-            document.getElementById('message').innerText = "Opponent picked wrong! Your turn to choose!";
-        });
-
-        socket.on('game_over', (data) => {
-            clearInterval(timerInterval);
-            gameActive = false;
-            
-            const boxes = document.querySelectorAll('.box');
-            boxes.forEach((box, idx) => {
-                box.disabled = true;
-                if (idx === treasureIndex) {
-                    box.innerText = currentTreasureEmoji;
-                    box.classList.remove('revealed');
-                    box.classList.add('winner');
-                }
-            });
-
-            const currentUsername = localStorage.getItem('emoji_current_user_secure');
-
-            if (data.reason === 'timeout') {
-                document.getElementById('message').innerHTML = `⏱️ Match timed out! It's a draw. Your ₦${selectedStake.toLocaleString()} stake has been refunded.`;
-                document.getElementById('turn-indicator').innerText = "Match Draw (Refunded)";
-            } else if (data.winner === currentUsername) {
-                const feeText = data.feeCharged ? `₦${data.feeCharged.toLocaleString()} (${data.commissionPercent}% commission)` : `commission`;
-                document.getElementById('message').innerHTML = `🎉 Congratulations! You won ₦${data.netWinnings.toLocaleString()} after ${feeText} was deducted.`;
-                document.getElementById('turn-indicator').innerHTML = `<strong style="color: #00ff66;">🎉 Victory! You Won!</strong>`;
-            } else {
-                document.getElementById('message').innerHTML = `❌ Game Over! ${data.winner} found the treasure first. ₦${selectedStake.toLocaleString()} stake deducted.`;
-                document.getElementById('turn-indicator').innerHTML = `<strong style="color: #ff003c;">❌ Opponent Won!</strong>`;
-            }
-
-            updateLobbyWallet();
-            selectedStake = 0;
-        });
-    </script>
 
     <style>
         :root {
@@ -422,6 +173,8 @@
             border: 1px solid rgba(255,255,255,0.2);
             margin-top: 10px;
             font-family: 'Orbitron', sans-serif;
+            border-radius: 8px;
+            cursor: pointer;
         }
 
         .btn-secondary:hover:not(:disabled) {
@@ -738,12 +491,12 @@
         <div id="auth-msg" class="error-msg"></div>
     </div>
 
-    <!-- MAIN DASHBOARD (LOBBY) SCREEN -->
-    <div id="lobby-screen" class="screen-section">
-        <h1><span class="app-logo">😁</span> Emoji Dashboard</h1>
+    <!-- MULTI-GAME HUB (ARCADE DASHBOARD) SCREEN -->
+    <div id="game-hub-screen" class="screen-section">
+        <h1><span class="app-logo">🕹️</span> Skill Arcade Hub</h1>
         
         <div class="user-panel">
-            <span>👤 <strong id="lobby-display-user"></strong></span>
+            <span>👤 <strong id="hub-display-user"></strong></span>
             <div style="display: flex; gap: 6px; align-items: center;">
                 <button class="menu-btn" onclick="toggleHamburgerMenu()">☰</button>
                 <button class="logout-btn" onclick="logout()">Log Out</button>
@@ -751,7 +504,7 @@
             
             <div id="hamburger-dropdown" class="dropdown-menu">
                 <button class="dropdown-item" onclick="closeMenu(); showReferralModal()" style="color: var(--neon-gold);">🎁 Refer & Earn (1%)</button>
-                <button class="dropdown-item" onclick="closeMenu(); showLeaderboard()">🏆 Top Hunters</button>
+                <button class="dropdown-item" onclick="closeMenu(); showLeaderboard()">🏆 Top Players</button>
                 <button class="dropdown-item" onclick="closeMenu(); showTransactionHistory()">📜 History</button>
                 <button class="dropdown-item" onclick="closeMenu(); showChangePasswordScreen()">🔐 Password</button>
                 <button class="dropdown-item" onclick="closeMenu(); showSupportModal()">💬 Support</button>
@@ -762,12 +515,12 @@
 
         <!-- LIVE ONLINE PLAYERS BADGE -->
         <div style="background: rgba(0, 243, 255, 0.08); border: 1px solid rgba(0, 243, 255, 0.2); padding: 8px 15px; border-radius: 8px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 0.85rem; color: #94a3b8; text-transform: uppercase; font-family:'Orbitron',sans-serif;">🟢 Online Hunters:</span>
+            <span style="font-size: 0.85rem; color: #94a3b8; text-transform: uppercase; font-family:'Orbitron',sans-serif;">🟢 Online Players:</span>
             <span id="live-online-count" style="font-family: 'Orbitron', sans-serif; font-size: 1rem; color: var(--neon-blue); font-weight: bold;">Loading...</span>
         </div>
         
         <div class="wallet-card">
-            <div class="subtitle" style="margin-bottom: 5px;">Wallet Balance</div>
+            <div class="subtitle" style="margin-bottom: 5px;">Shared Wallet Balance</div>
             <div style="font-size: 1.8rem; color: #00f3ff; font-weight: bold; margin-bottom: 10px;" id="lobby-wallet-balance">₦0.00</div>
             <div style="display: flex; gap: 8px;">
                 <button class="btn btn-success" onclick="showWalletCashier()" style="margin-top: 0; flex: 2;">💳 Cashier (₦)</button>
@@ -775,7 +528,51 @@
             </div>
         </div>
 
-        <p style="font-size: 0.85rem; color: #94a3b8; text-align: left; margin-bottom: 10px; text-transform: uppercase; font-family:'Orbitron',sans-serif;">Select a stake tier to join a live room:</p>
+        <p style="font-size: 0.85rem; color: #94a3b8; text-align: left; margin-bottom: 10px; text-transform: uppercase; font-family:'Orbitron',sans-serif;">Select a game arena:</p>
+
+        <div class="group-card" onclick="selectGame('treasure')" style="cursor: pointer;">
+            <div class="group-info">
+                <h3>💎 Emoji Treasure Hunt</h3>
+                <p>Find the hidden emoji faster than your rival!</p>
+            </div>
+            <button class="group-btn">Play</button>
+        </div>
+
+        <div class="group-card" onclick="selectGame('whot')" style="cursor: pointer;">
+            <div class="group-info">
+                <h3>🃏 Naija Whot 1v1</h3>
+                <p>Fast-paced card duel with Pick Two & General Market.</p>
+            </div>
+            <button class="group-btn">Play</button>
+        </div>
+
+        <div class="group-card vip-card" onclick="selectGame('ludo')" style="cursor: pointer;">
+            <div class="group-info">
+                <h3>🎲 Ludo Blitz (Coming Soon)</h3>
+                <p>2-Token quick dash Ludo battle.</p>
+            </div>
+            <button class="group-btn vip-btn">Soon</button>
+        </div>
+
+        <div class="group-card vip-card" onclick="selectGame('snooker')" style="cursor: pointer;">
+            <div class="group-info">
+                <h3>🎱 Pro Snooker (Coming Soon)</h3>
+                <p>Quick 8-Ball pool physics duel.</p>
+            </div>
+            <button class="group-btn vip-btn">Soon</button>
+        </div>
+    </div>
+
+    <!-- EMOJI TREASURE HUNT LOBBY SCREEN -->
+    <div id="lobby-screen" class="screen-section">
+        <h1><span class="app-logo">💎</span> Emoji Treasure Hunt</h1>
+        
+        <div class="user-panel">
+            <span>👤 <strong id="lobby-display-user-2"></strong></span>
+            <button class="btn-secondary" onclick="switchScreen('game-hub-screen')" style="margin-top: 0; padding: 6px 12px; font-size: 0.8rem;">← Arcade Lobby</button>
+        </div>
+
+        <p style="font-size: 0.85rem; color: #94a3b8; text-align: left; margin-bottom: 10px; text-transform: uppercase; font-family:'Orbitron',sans-serif;">Select a stake tier:</p>
 
         <div class="group-card">
             <div class="group-info">
@@ -844,6 +641,97 @@
         </div>
     </div>
 
+    <!-- NAIJA WHOT LOBBY SCREEN -->
+    <div id="whot-lobby-screen" class="screen-section">
+        <h1><span class="app-logo">🃏</span> Naija Whot Arena</h1>
+        <div class="subtitle">Classic 1v1 Card Duel</div>
+
+        <div class="user-panel">
+            <span>👤 <strong id="whot-display-user"></strong></span>
+            <button class="btn-secondary" onclick="switchScreen('game-hub-screen')" style="margin-top: 0; padding: 6px 12px; font-size: 0.8rem;">← Arcade Lobby</button>
+        </div>
+
+        <p style="font-size: 0.85rem; color: #94a3b8; text-align: left; margin-bottom: 10px; text-transform: uppercase; font-family:'Orbitron',sans-serif;">Select Whot Stake Tier:</p>
+
+        <div class="group-card">
+            <div class="group-info">
+                <h3>🎮 Whot Micro Table</h3>
+                <p>Stake: ₦100 | 2 Players | Payout: ₦200</p>
+                <p id="whot-stat-100" style="color: #00ff66; margin-top: 2px; font-size: 0.8rem;">🟢 0 Active | ⏳ 0 Waiting</p>
+            </div>
+            <button class="group-btn" onclick="joinWhotQueue(100, 'Whot Micro Table')">Play</button>
+        </div>
+
+        <div class="group-card">
+            <div class="group-info">
+                <h3>🥉 Whot Rookie Room</h3>
+                <p>Stake: ₦500 | 2 Players | Payout: ₦1,000</p>
+                <p id="whot-stat-500" style="color: #00ff66; margin-top: 2px; font-size: 0.8rem;">🟢 0 Active | ⏳ 0 Waiting</p>
+            </div>
+            <button class="group-btn" onclick="joinWhotQueue(500, 'Whot Rookie Room')">Play</button>
+        </div>
+
+        <div class="group-card">
+            <div class="group-info">
+                <h3>🥈 Whot Pro Lounge</h3>
+                <p>Stake: ₦1,000 | 2 Players | Payout: ₦2,000</p>
+                <p id="whot-stat-1000" style="color: #00ff66; margin-top: 2px; font-size: 0.8rem;">🟢 0 Active | ⏳ 0 Waiting</p>
+            </div>
+            <button class="group-btn" onclick="joinWhotQueue(1000, 'Whot Pro Lounge')">Play</button>
+        </div>
+
+        <div class="group-card vip-card">
+            <div class="group-info">
+                <h3>👑 Whot Master Chamber</h3>
+                <p>Stake: ₦5,000 | 2 Players | Payout: ₦10,000</p>
+                <p id="whot-stat-5000" style="color: var(--neon-gold); margin-top: 2px; font-size: 0.8rem;">🟢 0 Active | ⏳ 0 Waiting</p>
+            </div>
+            <button class="group-btn vip-btn" onclick="joinWhotQueue(5000, 'Whot Master Chamber')">Play</button>
+        </div>
+    </div>
+
+    <!-- NAIJA WHOT ACTIVE GAME SCREEN -->
+    <div id="whot-game-screen" class="screen-section">
+        <h1 id="whot-active-title">🃏 Naija Whot 1v1</h1>
+        <div class="user-panel">
+            <span>⚔️ Rival: <strong id="whot-opponent-name">Searching...</strong> (<span id="whot-opponent-cards">0</span> 🃏)</span>
+            <button class="logout-btn" onclick="leaveWhotGame()">Exit</button>
+        </div>
+
+        <div class="turn-indicator-box" id="whot-turn-banner">⏳ Searching for Whot opponent...</div>
+        <div id="whot-action-log" style="font-size: 0.85rem; color: var(--neon-gold); margin-bottom: 12px; min-height: 20px;"></div>
+
+        <!-- TABLE CENTER: MARKET & TOP CARD -->
+        <div style="display: flex; justify-content: center; gap: 25px; align-items: center; margin: 15px 0; padding: 15px; background: rgba(0,0,0,0.35); border-radius: 12px; border: 1px solid rgba(255,255,255,0.08);">
+            <div onclick="drawWhotCard()" style="cursor: pointer; width: 85px; height: 120px; background: linear-gradient(135deg, #1e293b, #0f172a); border: 2px solid var(--neon-blue); border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; box-shadow: 0 0 15px rgba(0,243,255,0.2);">
+                <span style="font-size: 1.6rem;">🎴</span>
+                <span style="font-family: 'Orbitron', sans-serif; font-size: 0.7rem; color: var(--neon-blue); margin-top: 4px;">MARKET</span>
+                <span id="whot-market-count" style="font-size: 0.8rem; color: #94a3b8;">(0)</span>
+            </div>
+
+            <div id="whot-top-card" style="width: 85px; height: 120px; background: #fff; color: #7f1d1d; border: 3px solid var(--neon-gold); border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: 'Orbitron', sans-serif; font-weight: 900; box-shadow: 0 0 20px rgba(250,204,21,0.3);">
+                <span style="font-size: 1.1rem;">?</span>
+            </div>
+        </div>
+
+        <div id="whot-called-shape-badge" style="display: none; background: rgba(250,204,21,0.15); border: 1px solid var(--neon-gold); color: var(--neon-gold); padding: 6px; border-radius: 6px; margin-bottom: 10px; font-family: 'Orbitron', sans-serif; font-size: 0.85rem;"></div>
+
+        <!-- SHAPE PICKER MODAL FOR WHOT 20 -->
+        <div id="whot-shape-picker" style="display: none; background: rgba(15,23,42,0.95); border: 1px solid var(--neon-blue); padding: 12px; border-radius: 10px; margin-bottom: 12px;">
+            <div style="font-size: 0.8rem; color: var(--neon-blue); margin-bottom: 8px; font-family: 'Orbitron', sans-serif;">CALL A SHAPE FOR WHOT 20:</div>
+            <div style="display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;">
+                <button class="group-btn" style="padding: 6px 10px; font-size: 0.8rem;" onclick="confirmWhot20Shape('circle')">● Circle</button>
+                <button class="group-btn" style="padding: 6px 10px; font-size: 0.8rem;" onclick="confirmWhot20Shape('triangle')">▲ Triangle</button>
+                <button class="group-btn" style="padding: 6px 10px; font-size: 0.8rem;" onclick="confirmWhot20Shape('cross')">✚ Cross</button>
+                <button class="group-btn" style="padding: 6px 10px; font-size: 0.8rem;" onclick="confirmWhot20Shape('square')">■ Square</button>
+                <button class="group-btn" style="padding: 6px 10px; font-size: 0.8rem;" onclick="confirmWhot20Shape('star')">★ Star</button>
+            </div>
+        </div>
+
+        <div style="text-align: left; font-size: 0.8rem; color: #94a3b8; margin-bottom: 6px; font-family: 'Orbitron', sans-serif;">YOUR HAND (TAP TO PLAY):</div>
+        <div id="whot-my-hand" style="display: flex; gap: 8px; overflow-x: auto; padding: 10px 4px; min-height: 115px;"></div>
+    </div>
+
     <!-- REFERRAL & AFFILIATE MODAL SCREEN -->
     <div id="referral-screen" class="screen-section">
         <h1>🎁 Refer & Earn</h1>
@@ -863,7 +751,7 @@
         <div style="background: rgba(250, 204, 21, 0.08); border: 1px solid rgba(250, 204, 21, 0.3); padding: 12px; border-radius: 10px; text-align: left; margin-bottom: 15px;">
             <p style="margin: 0 0 6px 0; color: var(--neon-gold); font-weight: bold; font-size: 0.95rem;">💰 Passive Income Breakdown:</p>
             <p style="margin: 0; font-size: 0.85rem; color: #cbd5e1; line-height: 1.4;">
-                Share your referral link below. Whenever a player registers with your link and wins a match, <strong>1% of the total match pot</strong> is credited straight to your wallet automatically! (e.g., <strong>₦500 instant bonus</strong> per Executive VIP win!)
+                Share your referral link below. Whenever a player registers with your link and wins a match, <strong>1% of the total match pot</strong> is credited straight to your wallet automatically!
             </p>
         </div>
 
@@ -875,7 +763,7 @@
         <button class="btn btn-success" onclick="copyReferralLink()">📋 Copy Referral Link</button>
         <div id="referral-copy-msg" class="success-msg"></div>
 
-        <button class="btn btn-secondary" onclick="returnToLobby()" style="margin-top: 20px;">Back to Dashboard</button>
+        <button class="btn btn-secondary" onclick="returnToHub()" style="margin-top: 20px;">Back to Arcade Hub</button>
     </div>
 
     <!-- CUSTOMER SUPPORT MODAL SCREEN (WHATSAPP 1-ON-1) -->
@@ -893,7 +781,7 @@
             </button>
         </div>
 
-        <button class="btn btn-secondary" onclick="returnToLobby()" style="margin-top: 20px;">Back to Dashboard</button>
+        <button class="btn btn-secondary" onclick="returnToHub()" style="margin-top: 20px;">Back to Arcade Hub</button>
     </div>
 
     <!-- ADMIN DASHBOARD SCREEN -->
@@ -946,7 +834,7 @@
             <div class="leaderboard-list" id="admin-withdrawal-history-container" style="max-height: 110px;"></div>
         </div>
 
-        <button class="btn btn-secondary" onclick="returnToLobby()" style="margin-top: 15px;">Back to Dashboard</button>
+        <button class="btn btn-secondary" onclick="returnToHub()" style="margin-top: 15px;">Back to Arcade Hub</button>
     </div>
 
     <!-- CHANGE PASSWORD SCREEN -->
@@ -976,7 +864,7 @@
         </div>
         <button class="btn btn-success" onclick="executeChangePassword()">Update Password</button>
         <div id="change-pwd-msg"></div>
-        <button class="btn btn-secondary" onclick="returnToLobby()" style="margin-top: 15px;">Back to Dashboard</button>
+        <button class="btn btn-secondary" onclick="returnToHub()" style="margin-top: 15px;">Back to Arcade Hub</button>
     </div>
 
     <!-- WALLET / CASHIER SCREEN -->
@@ -1030,27 +918,26 @@
                 <strong id="player-verified-name" style="color: var(--neon-green); font-size: 0.95rem;"></strong>
             </div>
 
-            <!-- PAYOUT DURATION & FEE NOTICE -->
             <div style="background: rgba(0, 243, 255, 0.08); border-left: 3px solid var(--neon-blue); padding: 10px; border-radius: 6px; margin-bottom: 12px; text-align: left;">
                 <p style="font-size: 0.85rem; color: #f8fafc; margin: 0 0 4px 0; font-weight: bold;">⚡ Fast Manual Payouts</p>
-                <p style="font-size: 0.8rem; color: #94a3b8; margin: 0;">Expect your payout in <strong>15 mins to 30 mins</strong> directly to your bank account. Standard transfer charges apply.</p>
+                <p style="font-size: 0.8rem; color: #94a3b8; margin: 0;">Expect your payout in <strong>15 mins to 30 mins</strong> directly to your bank account.</p>
             </div>
 
             <button class="btn" id="player-withdraw-btn" onclick="processWithdrawal()" disabled style="opacity: 0.5; cursor: not-allowed;">Withdraw to Bank</button>
             <div id="withdraw-msg"></div>
         </div>
 
-        <button class="btn btn-secondary" onclick="returnToLobbyFromWallet()" style="margin-top: 20px;">Back to Dashboard</button>
+        <button class="btn btn-secondary" onclick="returnToHubFromWallet()" style="margin-top: 20px;">Back to Arcade Hub</button>
     </div>
 
     <!-- LEADERBOARD SCREEN -->
     <div id="leaderboard-screen" class="screen-section">
-        <h1>🏆 Top Emoji Hunters</h1>
+        <h1>🏆 Top Players</h1>
         <div class="subtitle">Ranked by Wallet Balance & Earnings</div>
         
         <div class="leaderboard-list" id="leaderboard-container"></div>
 
-        <button class="btn" onclick="returnToLobbyFromLeaderboard()">Back to Dashboard</button>
+        <button class="btn" onclick="returnToHubFromLeaderboard()">Back to Arcade Hub</button>
     </div>
 
     <!-- TRANSACTION HISTORY SCREEN -->
@@ -1060,15 +947,15 @@
         
         <div class="leaderboard-list" id="transaction-container" style="max-height: 320px;"></div>
 
-        <button class="btn" onclick="returnToLobbyFromTransactions()">Back to Dashboard</button>
+        <button class="btn" onclick="returnToHubFromTransactions()">Back to Arcade Hub</button>
     </div>
 
-    <!-- GAME DASHBOARD SCREEN -->
+    <!-- GAME DASHBOARD SCREEN (TREASURE HUNT) -->
     <div id="game-screen" class="screen-section">
         <h1 id="active-group-title">Emoji Treasure Hunt</h1>
         <div class="user-panel">
             <span>👤 <strong id="display-user"></strong></span>
-            <button class="logout-btn" id="game-logout-btn" onclick="returnToLobby()">Exit</button>
+            <button class="logout-btn" id="game-logout-btn" onclick="returnToLobby()">Exit Match</button>
         </div>
         
         <div class="subtitle" style="margin-bottom: 8px;">
@@ -1088,12 +975,13 @@
 
         <div class="grid" id="game-grid"></div>
 
-        <button class="btn btn-secondary" id="back-to-lobby-btn" onclick="returnToLobby()" style="margin-top: 8px;">Back to Dashboard</button>
+        <button class="btn btn-secondary" id="back-to-lobby-btn" onclick="returnToLobby()" style="margin-top: 8px;">Back to Lobby</button>
         <div id="message" style="margin-top: 15px; font-size: 0.95rem; min-height: 24px;"></div>
     </div>
 </div>
 
 <script>
+    const socket = io(window.location.origin);
     const ADMIN_USERNAME = "onyejeAdmin";
 
     let isRegistering = false;
@@ -1110,13 +998,276 @@
     let roomPlayers = [];
     let currentTurnPlayer = null;
     let isMyTurn = false;
+    let pendingUserData = null;
 
     const decoyPool = [
         '😂', '😭', '🤯', '😡', '😱', '🤡', '🤠', '🥳', '😎', '🥶', '🥴', '🥺',
         '💣', '🍌', '👻', '💀', '🐸', '💩', '🧊', '🌵', '🍅', '🧩', '🪵', '🌀'
     ];
 
-    let pendingUserData = null;
+    socket.on('connect', () => {
+        console.log("Connected to the game server successfully!");
+        loadAllBanks();
+        checkUrlReferral();
+        checkPersistedSession();
+    });
+
+    socket.on('force_logout', (data) => {
+        alert(data.message || 'Your account was logged into from another device.');
+        logout();
+    });
+
+    socket.on('update_online_count', (data) => {
+        const countEl = document.getElementById('live-online-count');
+        if (countEl) {
+            countEl.innerText = `${data.count} Active Player${data.count === 1 ? '' : 's'}`;
+        }
+    });
+
+    socket.on('lounge_stats_update', (data) => {
+        const { waitingCounts, activeCounts, whotWaitingCounts, whotActiveCounts } = data;
+        const stakeTiers = [100, 500, 1000, 5000, 10000, 25000];
+        
+        stakeTiers.forEach(stake => {
+            const waiting = waitingCounts && waitingCounts[stake] ? waitingCounts[stake] : 0;
+            const active = activeCounts && activeCounts[stake] ? activeCounts[stake] : 0;
+            const statEl = document.getElementById(`lounge-stat-${stake}`);
+            if (statEl) {
+                statEl.innerHTML = `🟢 ${active} Active Hunters | ⏳ ${waiting} Waiting`;
+            }
+
+            const wWaiting = whotWaitingCounts && whotWaitingCounts[stake] ? whotWaitingCounts[stake] : 0;
+            const wActive = whotActiveCounts && whotActiveCounts[stake] ? whotActiveCounts[stake] : 0;
+            const wStatEl = document.getElementById(`whot-stat-${stake}`);
+            if (wStatEl) {
+                wStatEl.innerHTML = `🟢 ${wActive} Active | ⏳ ${wWaiting} Waiting`;
+            }
+        });
+    });
+
+    function checkPersistedSession() {
+        const savedUser = localStorage.getItem('emoji_current_user_secure');
+        if (savedUser && !currentUser) {
+            currentUser = savedUser;
+            socket.emit('register_session', { username: savedUser });
+            switchScreen('game-hub-screen');
+            
+            const hubUser = document.getElementById('hub-display-user');
+            const lobbyUser2 = document.getElementById('lobby-display-user-2');
+            const whotUser = document.getElementById('whot-display-user');
+            if (hubUser) hubUser.innerText = savedUser;
+            if (lobbyUser2) lobbyUser2.innerText = savedUser;
+            if (whotUser) whotUser.innerText = savedUser;
+            
+            updateLobbyWallet();
+
+            const adminMenuItem = document.getElementById('admin-menu-item');
+            if (adminMenuItem) {
+                adminMenuItem.style.display = (savedUser.toLowerCase() === ADMIN_USERNAME.toLowerCase()) ? 'block' : 'none';
+            }
+        }
+    }
+
+    function selectGame(gameId) {
+        if (gameId === 'treasure') {
+            switchScreen('lobby-screen');
+            updateLobbyWallet();
+        } else if (gameId === 'whot') {
+            switchScreen('whot-lobby-screen');
+            updateLobbyWallet();
+        } else {
+            alert("🚀 This arena is launching in the next update! Jump into Emoji Treasure Hunt or Naija Whot right now.");
+        }
+    }
+
+    function joinGameQueue(stakeAmount, groupName) {
+        selectedStake = stakeAmount;
+        selectedGroupName = groupName;
+
+        const username = localStorage.getItem('emoji_current_user_secure');
+        if (!username) {
+            alert("Please log in first!");
+            return;
+        }
+
+        let userObj = getCurrentUserObj();
+        if (userObj.balance < stakeAmount) {
+            alert(`Insufficient wallet balance! You need at least ₦${stakeAmount.toLocaleString()} to participate in the ${groupName}.`);
+            return;
+        }
+
+        switchScreen('game-screen');
+        document.getElementById('display-user').innerText = username;
+        document.getElementById('active-group-title').innerText = groupName;
+        document.getElementById('current-stake-display').innerText = stakeAmount.toLocaleString();
+        updateWalletDisplay();
+        
+        document.getElementById('message').innerText = "⏳ Looking for an opponent... Please wait!";
+        document.getElementById('turn-indicator').innerText = "Searching queue...";
+
+        const gridEl = document.getElementById('game-grid');
+        gridEl.innerHTML = '';
+        for (let i = 0; i < 40; i++) {
+            const btn = document.createElement('button');
+            btn.classList.add('box');
+            btn.innerText = '📦';
+            btn.disabled = true;
+            gridEl.appendChild(btn);
+        }
+
+        gameActive = false;
+
+        socket.emit('join_queue', {
+            username: username,
+            stake: stakeAmount,
+            gameType: 'treasure'
+        });
+    }
+
+    socket.on('match_found', (data) => {
+        currentRoomId = data.roomId;
+        const currentUsername = localStorage.getItem('emoji_current_user_secure');
+        roomPlayers = data.players; 
+        const opponentName = roomPlayers.find(p => p !== currentUsername) || 'Opponent';
+        
+        currentTurnPlayer = roomPlayers[0];
+        isMyTurn = (currentTurnPlayer === currentUsername);
+
+        document.getElementById('message').innerText = `🎉 Match found against ${opponentName}! Game starting...`;
+        
+        currentTreasureEmoji = data.targetEmoji;
+        treasureIndex = data.winningIndex;
+        document.getElementById('current-target-emoji').innerText = currentTreasureEmoji;
+
+        gameActive = true;
+        matchTimeLeft = 60;
+        turnTimeLeft = 6;
+        
+        document.getElementById('timer').innerText = matchTimeLeft + 's';
+        updateTurnDisplay();
+        
+        const boxes = document.querySelectorAll('.box');
+        boxes.forEach((box, idx) => {
+            box.innerText = '📦';
+            box.classList.remove('revealed', 'winner');
+            box.disabled = !isMyTurn;
+            box.onclick = () => {
+                if (isMyTurn && gameActive) {
+                    selectBox(idx, box);
+                }
+            };
+        });
+
+        clearInterval(timerInterval);
+        timerInterval = setInterval(() => {
+            if (!gameActive) return;
+
+            matchTimeLeft--;
+            turnTimeLeft--;
+
+            if (matchTimeLeft <= 0) {
+                document.getElementById('timer').innerText = '0s';
+                matchTimeLeft = 0;
+                gameActive = false;
+                clearInterval(timerInterval);
+
+                socket.emit('match_timeout', { roomId: currentRoomId });
+                return;
+            }
+
+            document.getElementById('timer').innerText = matchTimeLeft + 's';
+            updateTurnDisplay();
+
+            if (turnTimeLeft <= 0 && gameActive) {
+                passTurnToOpponent();
+            }
+        }, 1000);
+    });
+
+    function updateTurnDisplay() {
+        const turnEl = document.getElementById('turn-indicator');
+        if (!gameActive) return;
+
+        if (isMyTurn) {
+            turnEl.innerHTML = `👉 <strong style="color: #00ff66;">YOUR TURN!</strong> (${turnTimeLeft}s left)`;
+            turnEl.style.borderColor = '#00ff66';
+        } else {
+            turnEl.innerHTML = `⏳ <strong style="color: #ff003c;">OPPONENT'S TURN</strong> (${turnTimeLeft}s left)`;
+            turnEl.style.borderColor = '#ff003c';
+        }
+    }
+
+    function passTurnToOpponent() {
+        if (!gameActive) return;
+        const currentUsername = localStorage.getItem('emoji_current_user_secure');
+        currentTurnPlayer = roomPlayers.find(p => p !== currentTurnPlayer);
+        isMyTurn = (currentTurnPlayer === currentUsername);
+        turnTimeLeft = 6; 
+
+        updateTurnDisplay();
+        const boxes = document.querySelectorAll('.box');
+        boxes.forEach((box) => {
+            if (!box.classList.contains('revealed')) {
+                box.disabled = !isMyTurn;
+            }
+        });
+
+        document.getElementById('message').innerText = isMyTurn ? "⏱️ Opponent timed out! It's your turn now!" : "⏱️ Your turn expired! Waiting for opponent...";
+    }
+
+    socket.on('opponent_played', (data) => {
+        if (!gameActive) return;
+        const boxes = document.querySelectorAll('.box');
+        const box = boxes[data.index];
+        if (box && !box.classList.contains('revealed')) {
+            box.classList.add('revealed');
+            box.innerText = data.decoyEmoji;
+            box.disabled = true;
+        }
+        const currentUsername = localStorage.getItem('emoji_current_user_secure');
+        currentTurnPlayer = currentUsername;
+        isMyTurn = true;
+        turnTimeLeft = 6;
+        updateTurnDisplay();
+        boxes.forEach((b) => {
+            if (!b.classList.contains('revealed')) {
+                b.disabled = false;
+            }
+        });
+        document.getElementById('message').innerText = "Opponent picked wrong! Your turn to choose!";
+    });
+
+    socket.on('game_over', (data) => {
+        clearInterval(timerInterval);
+        gameActive = false;
+        
+        const boxes = document.querySelectorAll('.box');
+        boxes.forEach((box, idx) => {
+            box.disabled = true;
+            if (idx === treasureIndex) {
+                box.innerText = currentTreasureEmoji;
+                box.classList.remove('revealed');
+                box.classList.add('winner');
+            }
+        });
+
+        const currentUsername = localStorage.getItem('emoji_current_user_secure');
+
+        if (data.reason === 'timeout') {
+            document.getElementById('message').innerHTML = `⏱️ Match timed out! It's a draw. Your ₦${selectedStake.toLocaleString()} stake has been refunded.`;
+            document.getElementById('turn-indicator').innerText = "Match Draw (Refunded)";
+        } else if (data.winner === currentUsername) {
+            const feeText = data.feeCharged ? `₦${data.feeCharged.toLocaleString()} (${data.commissionPercent}% commission)` : `commission`;
+            document.getElementById('message').innerHTML = `🎉 Congratulations! You won ₦${data.netWinnings.toLocaleString()} after ${feeText} was deducted.`;
+            document.getElementById('turn-indicator').innerHTML = `<strong style="color: #00ff66;">🎉 Victory! You Won!</strong>`;
+        } else {
+            document.getElementById('message').innerHTML = `❌ Game Over! ${data.winner} found the treasure first. ₦${selectedStake.toLocaleString()} stake deducted.`;
+            document.getElementById('turn-indicator').innerHTML = `<strong style="color: #ff003c;">❌ Opponent Won!</strong>`;
+        }
+
+        updateLobbyWallet();
+        selectedStake = 0;
+    });
 
     window.addEventListener('beforeunload', function (e) {
         if (gameActive) {
@@ -1125,7 +1276,6 @@
         }
     });
 
-    // Auto-capture ?ref=username from URL if a new player clicks a referral link
     function checkUrlReferral() {
         const urlParams = new URLSearchParams(window.location.search);
         const refParam = urlParams.get('ref');
@@ -1249,8 +1399,8 @@
         });
     }
 
-    function returnToLobbyFromTransactions() {
-        switchScreen('lobby-screen');
+    function returnToHubFromTransactions() {
+        switchScreen('game-hub-screen');
         updateLobbyWallet();
     }
 
@@ -1798,8 +1948,10 @@
         
         socket.emit('register_session', { username: username });
 
-        switchScreen('lobby-screen');
-        document.getElementById('lobby-display-user').innerText = username;
+        switchScreen('game-hub-screen');
+        document.getElementById('hub-display-user').innerText = username;
+        document.getElementById('lobby-display-user-2').innerText = username;
+        document.getElementById('whot-display-user').innerText = username;
         updateLobbyWallet();
 
         const adminMenuItem = document.getElementById('admin-menu-item');
@@ -1999,8 +2151,8 @@
         });
     }
 
-    function returnToLobbyFromWallet() {
-        switchScreen('lobby-screen');
+    function returnToHubFromWallet() {
+        switchScreen('game-hub-screen');
         updateLobbyWallet();
     }
 
@@ -2029,6 +2181,11 @@
         });
     }
 
+    function returnToHub() {
+        switchScreen('game-hub-screen');
+        updateLobbyWallet();
+    }
+
     function returnToLobby() {
         if (gameActive) {
             alert("⚠️ You cannot leave the room while an active match is in progress!");
@@ -2048,13 +2205,13 @@
     function showLeaderboard() {
         switchScreen('leaderboard-screen');
         const container = document.getElementById('leaderboard-container');
-        container.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 20px;">Loading top hunters from database...</div>`;
+        container.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 20px;">Loading top players from database...</div>`;
 
         socket.emit('get_leaderboard', (response) => {
             container.innerHTML = '';
 
             if (!response || !response.success || !response.leaderboard || response.leaderboard.length === 0) {
-                container.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 20px;">No hunters found on the leaderboard yet. Be the first!</div>`;
+                container.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 20px;">No players found on the leaderboard yet. Be the first!</div>`;
                 return;
             }
 
@@ -2082,8 +2239,8 @@
         });
     }
 
-    function returnToLobbyFromLeaderboard() {
-        switchScreen('lobby-screen');
+    function returnToHubFromLeaderboard() {
+        switchScreen('game-hub-screen');
         updateLobbyWallet();
     }
 
@@ -2173,6 +2330,159 @@
 
     function escapeHtml(text) {
         return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    }
+
+    // ==========================================
+    // NAIJA WHOT CLIENT LOGIC
+    // ==========================================
+    let pendingWhot20CardIndex = null;
+    const shapeSymbols = {
+        circle: '●',
+        triangle: '▲',
+        cross: '✚',
+        square: '■',
+        star: '★',
+        whot: '👑 WHOT'
+    };
+
+    function joinWhotQueue(stakeAmount, roomTitle) {
+        const username = localStorage.getItem('emoji_current_user_secure');
+        if (!username) return alert("Please log in first!");
+
+        let userObj = getCurrentUserObj();
+        if (userObj.balance < stakeAmount) {
+            return alert(`Insufficient wallet balance! You need at least ₦${stakeAmount.toLocaleString()} to join ${roomTitle}.`);
+        }
+
+        selectedStake = stakeAmount;
+        gameActive = false;
+        switchScreen('whot-game-screen');
+        document.getElementById('whot-active-title').innerText = `${roomTitle} (₦${stakeAmount.toLocaleString()})`;
+        document.getElementById('whot-opponent-name').innerText = 'Searching...';
+        document.getElementById('whot-opponent-cards').innerText = '0';
+        document.getElementById('whot-turn-banner').innerText = '⏳ Waiting for opponent to join table...';
+        document.getElementById('whot-my-hand').innerHTML = '';
+
+        socket.emit('join_queue', {
+            username,
+            stake: stakeAmount,
+            gameType: 'whot'
+        });
+    }
+
+    socket.on('whot_state_update', (state) => {
+        currentRoomId = state.roomId;
+        gameActive = true;
+        isMyTurn = (state.turn === currentUser);
+
+        document.getElementById('whot-opponent-name').innerText = state.opponentName;
+        document.getElementById('whot-opponent-cards').innerText = state.opponentCardCount;
+        document.getElementById('whot-market-count').innerText = `(${state.marketCount})`;
+        document.getElementById('whot-action-log').innerText = state.lastAction || '';
+
+        const turnBanner = document.getElementById('whot-turn-banner');
+        if (isMyTurn) {
+            turnBanner.innerHTML = state.pendingPick > 0
+                ? `⚠️ <strong style="color:#facc15;">TAP MARKET TO DRAW ${state.pendingPick} CARDS!</strong>`
+                : `👉 <strong style="color:#00ff66;">YOUR TURN TO PLAY!</strong>`;
+            turnBanner.style.borderColor = '#00ff66';
+        } else {
+            turnBanner.innerHTML = `⏳ <strong style="color:#ff003c;">${state.opponentName}'S TURN...</strong>`;
+            turnBanner.style.borderColor = '#ff003c';
+        }
+
+        const topEl = document.getElementById('whot-top-card');
+        topEl.innerHTML = `
+            <div style="font-size: 0.9rem;">${state.topCard.number}</div>
+            <div style="font-size: 1.8rem; margin: 4px 0;">${shapeSymbols[state.topCard.shape] || state.topCard.shape}</div>
+            <div style="font-size: 0.65rem; text-transform: uppercase;">${state.topCard.shape}</div>
+        `;
+
+        const shapeBadge = document.getElementById('whot-called-shape-badge');
+        if (state.calledShape) {
+            shapeBadge.style.display = 'block';
+            shapeBadge.innerText = `Requested Shape: ${shapeSymbols[state.calledShape]} ${state.calledShape.toUpperCase()}`;
+        } else {
+            shapeBadge.style.display = 'none';
+        }
+
+        const handContainer = document.getElementById('whot-my-hand');
+        handContainer.innerHTML = '';
+        state.myHand.forEach((card, idx) => {
+            const cardBtn = document.createElement('div');
+            cardBtn.style.cssText = `min-width: 72px; height: 105px; background: #fff; color: #7f1d1d; border: 2px solid ${isMyTurn ? '#00ff66' : '#64748b'}; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: 'Orbitron', sans-serif; font-weight: 900; cursor: pointer; flex-shrink: 0; user-select: none;`;
+            cardBtn.innerHTML = `
+                <div style="font-size: 0.85rem;">${card.number}</div>
+                <div style="font-size: 1.5rem; margin: 2px 0;">${shapeSymbols[card.shape]}</div>
+                <div style="font-size: 0.55rem; text-transform: uppercase;">${card.shape}</div>
+            `;
+            cardBtn.onclick = () => playWhotCard(idx, card);
+            handContainer.appendChild(cardBtn);
+        });
+    });
+
+    function playWhotCard(cardIndex, card) {
+        if (!gameActive || !isMyTurn) return;
+        if (card.shape === 'whot') {
+            pendingWhot20CardIndex = cardIndex;
+            document.getElementById('whot-shape-picker').style.display = 'block';
+            return;
+        }
+        socket.emit('whot_play_card', {
+            roomId: currentRoomId,
+            username: currentUser,
+            cardIndex
+        });
+    }
+
+    function confirmWhot20Shape(chosenShape) {
+        document.getElementById('whot-shape-picker').style.display = 'none';
+        if (pendingWhot20CardIndex === null) return;
+        socket.emit('whot_play_card', {
+            roomId: currentRoomId,
+            username: currentUser,
+            cardIndex: pendingWhot20CardIndex,
+            chosenShape
+        });
+        pendingWhot20CardIndex = null;
+    }
+
+    function drawWhotCard() {
+        if (!gameActive || !isMyTurn) return;
+        socket.emit('whot_draw_card', {
+            roomId: currentRoomId,
+            username: currentUser
+        });
+    }
+
+    socket.on('whot_invalid_move', (data) => {
+        document.getElementById('whot-action-log').innerText = `❌ ${data.message}`;
+    });
+
+    socket.on('whot_game_over', (data) => {
+        gameActive = false;
+        selectedStake = 0;
+        const turnBanner = document.getElementById('whot-turn-banner');
+        if (data.winner === currentUser) {
+            turnBanner.innerHTML = `<strong style="color:#00ff66;">🎉 VICTORY! YOU WON ₦${data.netWinnings.toLocaleString()}!</strong>`;
+            document.getElementById('whot-action-log').innerText = `Credited to your wallet (after ${data.commissionPercent}% fee).`;
+        } else {
+            turnBanner.innerHTML = `<strong style="color:#ff003c;">❌ GAME OVER! ${data.winner} WON!</strong>`;
+        }
+        updateLobbyWallet();
+    });
+
+    function leaveWhotGame() {
+        if (gameActive) {
+            alert("⚠️ You cannot leave an active Whot match in progress!");
+            return;
+        }
+        if (selectedStake > 0) {
+            socket.emit('leave_queue', { username: currentUser });
+            selectedStake = 0;
+        }
+        switchScreen('whot-lobby-screen');
+        updateLobbyWallet();
     }
 </script>
 

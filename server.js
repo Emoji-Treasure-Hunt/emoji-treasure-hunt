@@ -280,13 +280,144 @@ app.post('/verify-bank-account', (req, res) => {
     reqPaystack.end();
 });
 
-// In-Memory Game State Variables
+// ==========================================
+// 3. MULTI-GAME ENGINE HELPERS (TREASURE & WHOT)
+// ==========================================
 let waitingPlayers = [];
 let activeRooms = {};
 let withdrawalLogs = [];
 let supportTickets = [];
 
-// Socket.io Game Logic & Management
+// Generate a standard 54-card Naija Whot deck
+function generateWhotDeck() {
+    const deck = [];
+    const shapes = {
+        circle: [1, 2, 3, 4, 5, 7, 8, 10, 11, 12, 13, 14],
+        triangle: [1, 2, 3, 4, 5, 7, 8, 10, 11, 12, 13, 14],
+        cross: [1, 2, 3, 5, 7, 10, 11, 13, 14],
+        square: [1, 2, 3, 5, 7, 10, 11, 13, 14],
+        star: [1, 2, 3, 4, 5, 7, 8]
+    };
+
+    for (const [shape, numbers] of Object.entries(shapes)) {
+        for (const num of numbers) {
+            deck.push({ shape, number: num });
+        }
+    }
+    for (let i = 0; i < 5; i++) {
+        deck.push({ shape: 'whot', number: 20 });
+    }
+
+    // Fisher-Yates shuffle
+    for (let i = deck.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+    return deck;
+}
+
+// Unified Atomic Payout Function for ANY Game Type
+async function settleMatchWinner(room, winner, gameLabel = 'Emoji Treasure Hunt') {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        const [player1, player2] = room.players;
+        const loser = player1 === winner ? player2 : player1;
+        const stake = Number(room.stake);
+        const totalPool = stake * 2;
+
+        const commissionRate = stake >= 5000 ? 0.05 : 0.08;
+        const totalCommission = Math.round(totalPool * commissionRate);
+        const netWinnings = totalPool - totalCommission;
+
+        await client.query(
+            'UPDATE users SET balance = balance + $1 WHERE username = $2',
+            [netWinnings, winner]
+        );
+
+        await client.query(
+            'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
+            ['WIN', netWinnings, `Won ₦${totalPool.toLocaleString()} ${gameLabel} pool (${commissionRate * 100}% fee: ₦${totalCommission.toLocaleString()})`, winner]
+        );
+
+        await client.query(
+            'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
+            ['LOSS', stake, `Lost ${gameLabel} match`, loser]
+        );
+
+        const winnerRes = await client.query('SELECT referred_by FROM users WHERE username = $1', [winner]);
+        const referrerUsername = winnerRes.rows.length > 0 ? winnerRes.rows[0].referred_by : null;
+
+        let houseNetCut = totalCommission;
+        let referralBonus = 0;
+
+        if (referrerUsername) {
+            const refCheck = await client.query('SELECT email FROM users WHERE username = $1', [referrerUsername]);
+            if (refCheck.rows.length > 0) {
+                referralBonus = Math.round(totalPool * 0.01);
+                houseNetCut = totalCommission - referralBonus;
+
+                await client.query(
+                    'UPDATE users SET balance = balance + $1, referral_earnings = COALESCE(referral_earnings, 0) + $1 WHERE username = $2',
+                    [referralBonus, referrerUsername]
+                );
+
+                await client.query(
+                    'INSERT INTO transactions (email, type, amount, description) VALUES ($1, $2, $3, $4)',
+                    [refCheck.rows[0].email, 'REFERRAL', referralBonus, `1% Referral bonus from ${winner}'s ${gameLabel} win in ₦${totalPool.toLocaleString()} pot`]
+                );
+            }
+        }
+
+        const logDesc = referralBonus > 0
+            ? `[${gameLabel}] ${commissionRate * 100}% fee on ₦${totalPool.toLocaleString()} pot (₦${houseNetCut.toLocaleString()} house + ₦${referralBonus.toLocaleString()} ref to ${referrerUsername})`
+            : `[${gameLabel}] ${commissionRate * 100}% fee on ₦${totalPool.toLocaleString()} pool match`;
+
+        await client.query(
+            'INSERT INTO admin_income_logs (type, description, amount) VALUES ($1, $2, $3)',
+            ['COMMISSION', logDesc, houseNetCut]
+        );
+
+        await client.query('COMMIT');
+        return { netWinnings, feeCharged: totalCommission, commissionPercent: commissionRate * 100 };
+    } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+    } finally {
+        client.release();
+    }
+}
+
+// Emit sanitized Whot state to each player (hides opponent's exact cards)
+function emitWhotState(roomId) {
+    const room = activeRooms[roomId];
+    if (!room || room.gameType !== 'whot') return;
+
+    room.players.forEach(playerUsername => {
+        const opponentUsername = room.players.find(p => p !== playerUsername);
+        const socketId = activeUserSessions[playerUsername];
+        if (socketId) {
+            io.to(socketId).emit('whot_state_update', {
+                roomId,
+                stake: room.stake,
+                myHand: room.hands[playerUsername],
+                opponentCardCount: room.hands[opponentUsername] ? room.hands[opponentUsername].length : 0,
+                opponentName: opponentUsername,
+                topCard: room.topCard,
+                calledShape: room.calledShape,
+                marketCount: room.deck.length,
+                turn: room.turn,
+                pendingPick: room.pendingPick || 0,
+                lastAction: room.lastAction || 'Match started!'
+            });
+        }
+    });
+}
+
+// ==========================================
+// 4. SOCKET.IO GAME LOGIC & MANAGEMENT
+// ==========================================
 io.on('connection', (socket) => {
     console.log(`User connected: ${socket.id}`);
 
@@ -295,16 +426,26 @@ io.on('connection', (socket) => {
     const broadcastLoungeStats = () => {
         let waitingCounts = {};
         let activeCounts = {};
+        let whotWaitingCounts = {};
+        let whotActiveCounts = {};
 
         waitingPlayers.forEach(p => {
-            waitingCounts[p.stake] = (waitingCounts[p.stake] || 0) + 1;
+            if (p.gameType === 'whot') {
+                whotWaitingCounts[p.stake] = (whotWaitingCounts[p.stake] || 0) + 1;
+            } else {
+                waitingCounts[p.stake] = (waitingCounts[p.stake] || 0) + 1;
+            }
         });
 
         Object.values(activeRooms).forEach(room => {
-            activeCounts[room.stake] = (activeCounts[room.stake] || 0) + room.players.length;
+            if (room.gameType === 'whot') {
+                whotActiveCounts[room.stake] = (whotActiveCounts[room.stake] || 0) + room.players.length;
+            } else {
+                activeCounts[room.stake] = (activeCounts[room.stake] || 0) + room.players.length;
+            }
         });
 
-        io.emit('lounge_stats_update', { waitingCounts, activeCounts });
+        io.emit('lounge_stats_update', { waitingCounts, activeCounts, whotWaitingCounts, whotActiveCounts });
     };
 
     broadcastLoungeStats();
@@ -632,8 +773,11 @@ io.on('connection', (socket) => {
         }
     });
 
+    // ==========================================
+    // UNIFIED MULTI-GAME QUEUE (TREASURE & WHOT)
+    // ==========================================
     socket.on('join_queue', async (data) => {
-        const { username, stake } = data;
+        const { username, stake, gameType = 'treasure' } = data;
         const numericStake = Number(stake);
         
         const userRes = await pool.query('SELECT balance FROM users WHERE username = $1', [username]);
@@ -643,11 +787,11 @@ io.on('connection', (socket) => {
         }
 
         waitingPlayers = waitingPlayers.filter(p => p.username !== username);
-        const opponentIndex = waitingPlayers.findIndex(p => Number(p.stake) === numericStake);
+        const opponentIndex = waitingPlayers.findIndex(p => Number(p.stake) === numericStake && p.gameType === gameType);
 
         if (opponentIndex !== -1) {
             const player1 = waitingPlayers.splice(opponentIndex, 1)[0];
-            const player2 = { socketId: socket.id, username, stake: numericStake };
+            const player2 = { socketId: socket.id, username, stake: numericStake, gameType };
 
             const client = await pool.connect();
             try {
@@ -666,36 +810,69 @@ io.on('connection', (socket) => {
                 await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [numericStake, player1.username]);
                 await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [numericStake, player2.username]);
 
+                const gameLabel = gameType === 'whot' ? 'Naija Whot' : 'Emoji Treasure Hunt';
+
                 await client.query(
                     'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
-                    ['STAKE', numericStake, `Staked ₦${numericStake.toLocaleString()} for match`, player1.username]
+                    ['STAKE', numericStake, `Staked ₦${numericStake.toLocaleString()} for ${gameLabel} match`, player1.username]
                 );
                 await client.query(
                     'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
-                    ['STAKE', numericStake, `Staked ₦${numericStake.toLocaleString()} for match`, player2.username]
+                    ['STAKE', numericStake, `Staked ₦${numericStake.toLocaleString()} for ${gameLabel} match`, player2.username]
                 );
 
                 await client.query('COMMIT');
 
-                const roomId = 'room_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
-                const targetEmojis = ['💎', '🔑', '👑', '🪙', '🏆'];
-                const targetEmoji = targetEmojis[Math.floor(Math.random() * targetEmojis.length)];
-                const winningIndex = Math.floor(Math.random() * 40);
-
-                activeRooms[roomId] = {
-                    players: [player1.username, player2.username],
-                    stake: numericStake,
-                    targetEmoji,
-                    winningIndex,
-                    turn: player1.username
-                };
-
+                const roomId = `${gameType}_room_` + Date.now() + '_' + Math.floor(Math.random() * 1000);
                 const socket1 = io.sockets.sockets.get(player1.socketId);
                 const socket2 = io.sockets.sockets.get(player2.socketId);
                 if (socket1) socket1.join(roomId);
                 if (socket2) socket2.join(roomId);
 
-                io.to(roomId).emit('match_found', { roomId, players: [player1.username, player2.username], targetEmoji, winningIndex });
+                if (gameType === 'whot') {
+                    const deck = generateWhotDeck();
+                    const hand1 = deck.splice(0, 5);
+                    const hand2 = deck.splice(0, 5);
+
+                    // Pick first non-special card for top of pile
+                    let firstCardIdx = deck.findIndex(c => c.shape !== 'whot' && ![1, 2, 8, 14].includes(c.number));
+                    if (firstCardIdx === -1) firstCardIdx = 0;
+                    const topCard = deck.splice(firstCardIdx, 1)[0];
+
+                    activeRooms[roomId] = {
+                        gameType: 'whot',
+                        players: [player1.username, player2.username],
+                        stake: numericStake,
+                        deck,
+                        discardPile: [topCard],
+                        hands: {
+                            [player1.username]: hand1,
+                            [player2.username]: hand2
+                        },
+                        topCard,
+                        calledShape: null,
+                        turn: player1.username,
+                        pendingPick: 0,
+                        lastAction: `Match started! Top card is ${topCard.shape.toUpperCase()} ${topCard.number}`
+                    };
+
+                    emitWhotState(roomId);
+                } else {
+                    const targetEmojis = ['💎', '🔑', '👑', '🪙', '🏆'];
+                    const targetEmoji = targetEmojis[Math.floor(Math.random() * targetEmojis.length)];
+                    const winningIndex = Math.floor(Math.random() * 40);
+
+                    activeRooms[roomId] = {
+                        gameType: 'treasure',
+                        players: [player1.username, player2.username],
+                        stake: numericStake,
+                        targetEmoji,
+                        winningIndex,
+                        turn: player1.username
+                    };
+
+                    io.to(roomId).emit('match_found', { roomId, players: [player1.username, player2.username], targetEmoji, winningIndex });
+                }
 
             } catch (err) {
                 await client.query('ROLLBACK');
@@ -705,11 +882,14 @@ io.on('connection', (socket) => {
                 broadcastLoungeStats();
             }
         } else {
-            waitingPlayers.push({ socketId: socket.id, username, stake: numericStake });
+            waitingPlayers.push({ socketId: socket.id, username, stake: numericStake, gameType });
             broadcastLoungeStats();
         }
     });
 
+    // ==========================================
+    // EMOJI TREASURE HUNT EVENTS
+    // ==========================================
     socket.on('play_turn', (data) => {
         const { roomId, index, decoyEmoji } = data;
         const room = activeRooms[roomId];
@@ -721,84 +901,20 @@ io.on('connection', (socket) => {
     socket.on('player_won', async (data) => {
         const { roomId, winner } = data;
         const room = activeRooms[roomId];
-        if (room) {
+        if (room && room.gameType === 'treasure') {
             delete activeRooms[roomId];
-
-            const client = await pool.connect();
             try {
-                await client.query('BEGIN');
-
-                const [player1, player2] = room.players;
-                const loser = player1 === winner ? player2 : player1;
-                const stake = Number(room.stake);
-                const totalPool = stake * 2;
-
-                const commissionRate = stake >= 5000 ? 0.05 : 0.08;
-                const totalCommission = Math.round(totalPool * commissionRate);
-                const netWinnings = totalPool - totalCommission;
-
-                await client.query(
-                    'UPDATE users SET balance = balance + $1 WHERE username = $2',
-                    [netWinnings, winner]
-                );
-
-                await client.query(
-                    'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
-                    ['WIN', netWinnings, `Won ₦${totalPool.toLocaleString()} pool (${commissionRate * 100}% fee: ₦${totalCommission.toLocaleString()})`, winner]
-                );
-
-                await client.query(
-                    'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
-                    ['LOSS', stake, `Lost match treasure hunt`, loser]
-                );
-
-                const winnerRes = await client.query('SELECT referred_by FROM users WHERE username = $1', [winner]);
-                const referrerUsername = winnerRes.rows.length > 0 ? winnerRes.rows[0].referred_by : null;
-
-                let houseNetCut = totalCommission;
-                let referralBonus = 0;
-
-                if (referrerUsername) {
-                    const refCheck = await client.query('SELECT email FROM users WHERE username = $1', [referrerUsername]);
-                    if (refCheck.rows.length > 0) {
-                        referralBonus = Math.round(totalPool * 0.01);
-                        houseNetCut = totalCommission - referralBonus;
-
-                        await client.query(
-                            'UPDATE users SET balance = balance + $1, referral_earnings = COALESCE(referral_earnings, 0) + $1 WHERE username = $2',
-                            [referralBonus, referrerUsername]
-                        );
-
-                        await client.query(
-                            'INSERT INTO transactions (email, type, amount, description) VALUES ($1, $2, $3, $4)',
-                            [refCheck.rows[0].email, 'REFERRAL', referralBonus, `1% Referral bonus from ${winner}'s win in ₦${totalPool.toLocaleString()} pot`]
-                        );
-                    }
-                }
-
-                const logDesc = referralBonus > 0
-                    ? `${commissionRate * 100}% fee on ₦${totalPool.toLocaleString()} pot (₦${houseNetCut.toLocaleString()} house + ₦${referralBonus.toLocaleString()} ref to ${referrerUsername})`
-                    : `${commissionRate * 100}% fee on ₦${totalPool.toLocaleString()} pool match`;
-
-                await client.query(
-                    'INSERT INTO admin_income_logs (type, description, amount) VALUES ($1, $2, $3)',
-                    ['COMMISSION', logDesc, houseNetCut]
-                );
-
-                await client.query('COMMIT');
-
+                const payoutInfo = await settleMatchWinner(room, winner, 'Emoji Treasure Hunt');
                 io.to(roomId).emit('game_over', { 
                     winner, 
                     reason: 'treasure_found', 
-                    netWinnings, 
-                    feeCharged: totalCommission,
-                    commissionPercent: commissionRate * 100
+                    netWinnings: payoutInfo.netWinnings, 
+                    feeCharged: payoutInfo.feeCharged,
+                    commissionPercent: payoutInfo.commissionPercent
                 });
             } catch (err) {
-                await client.query('ROLLBACK');
                 console.error('Error processing winner payout:', err);
             } finally {
-                client.release();
                 broadcastLoungeStats();
             }
         }
@@ -835,12 +951,142 @@ io.on('connection', (socket) => {
         }
     });
 
+    // ==========================================
+    // NAIJA WHOT 1V1 EVENTS
+    // ==========================================
+    socket.on('whot_play_card', async (data) => {
+        const { roomId, username, cardIndex, chosenShape } = data;
+        const room = activeRooms[roomId];
+        if (!room || room.gameType !== 'whot') return;
+        if (room.turn !== username) return;
+
+        const playerHand = room.hands[username];
+        if (!playerHand || cardIndex < 0 || cardIndex >= playerHand.length) return;
+
+        const card = playerHand[cardIndex];
+        const opponent = room.players.find(p => p !== username);
+
+        // If player is facing a Pick 2 penalty, they must draw from market
+        if (room.pendingPick > 0) {
+            socket.emit('whot_invalid_move', { message: `You must draw ${room.pendingPick} cards from the market!` });
+            return;
+        }
+
+        // Validate move against topCard or calledShape
+        let isValid = false;
+        if (card.shape === 'whot') {
+            isValid = true;
+        } else if (room.calledShape) {
+            isValid = (card.shape === room.calledShape);
+        } else {
+            isValid = (card.shape === room.topCard.shape || card.number === room.topCard.number);
+        }
+
+        if (!isValid) {
+            socket.emit('whot_invalid_move', { message: 'Card does not match shape or number!' });
+            return;
+        }
+
+        // Remove card from hand & place on top of discard pile
+        playerHand.splice(cardIndex, 1);
+        room.topCard = card;
+        room.discardPile.push(card);
+        room.calledShape = null;
+
+        // Check for immediate Victory (Empty Hand)
+        if (playerHand.length === 0) {
+            delete activeRooms[roomId];
+            try {
+                const payoutInfo = await settleMatchWinner(room, username, 'Naija Whot');
+                io.to(roomId).emit('whot_game_over', {
+                    winner: username,
+                    reason: 'cards_finished',
+                    netWinnings: payoutInfo.netWinnings,
+                    feeCharged: payoutInfo.feeCharged,
+                    commissionPercent: payoutInfo.commissionPercent
+                });
+            } catch (err) {
+                console.error('Error settling Whot winner:', err);
+            } finally {
+                broadcastLoungeStats();
+            }
+            return;
+        }
+
+        // Apply Special Naija Whot Card Rules
+        if (card.shape === 'whot') {
+            const validShapes = ['circle', 'triangle', 'cross', 'square', 'star'];
+            const shapeToCall = validShapes.includes(chosenShape) ? chosenShape : 'circle';
+            room.calledShape = shapeToCall;
+            room.turn = opponent;
+            room.lastAction = `${username} played WHOT 20 and called ${shapeToCall.toUpperCase()}!`;
+        } else if (card.number === 1) {
+            // HOLD ON: Player plays again
+            room.turn = username;
+            room.lastAction = `${username} played HOLD ON (1)! ${username} plays again!`;
+        } else if (card.number === 8) {
+            // SUSPENSION: Opponent skipped, player plays again
+            room.turn = username;
+            room.lastAction = `${username} played SUSPENSION (8)! ${opponent} is skipped!`;
+        } else if (card.number === 2) {
+            // PICK TWO
+            room.pendingPick = 2;
+            room.turn = opponent;
+            room.lastAction = `${username} played PICK TWO (2)! ${opponent} must draw 2 cards!`;
+        } else if (card.number === 14) {
+            // GENERAL MARKET: Opponent draws 1 immediately and loses turn
+            room.pendingPick = 1;
+            room.turn = opponent;
+            room.lastAction = `${username} played GENERAL MARKET (14)! ${opponent} must draw 1 card!`;
+        } else {
+            room.turn = opponent;
+            room.lastAction = `${username} played ${card.shape.toUpperCase()} ${card.number}.`;
+        }
+
+        emitWhotState(roomId);
+    });
+
+    socket.on('whot_draw_card', (data) => {
+        const { roomId, username } = data;
+        const room = activeRooms[roomId];
+        if (!room || room.gameType !== 'whot') return;
+        if (room.turn !== username) return;
+
+        const opponent = room.players.find(p => p !== username);
+        const drawCount = room.pendingPick > 0 ? room.pendingPick : 1;
+
+        for (let i = 0; i < drawCount; i++) {
+            // If market is empty, reshuffle discard pile except top card
+            if (room.deck.length === 0 && room.discardPile.length > 1) {
+                const currentTop = room.discardPile.pop();
+                room.deck = room.discardPile.splice(0);
+                room.discardPile = [currentTop];
+                for (let j = room.deck.length - 1; j > 0; j--) {
+                    const k = Math.floor(Math.random() * (j + 1));
+                    [room.deck[j], room.deck[k]] = [room.deck[k], room.deck[j]];
+                }
+            }
+            if (room.deck.length > 0) {
+                room.hands[username].push(room.deck.pop());
+            }
+        }
+
+        room.pendingPick = 0;
+        room.turn = opponent;
+        room.lastAction = `${username} drew ${drawCount} card${drawCount > 1 ? 's' : ''} from the market.`;
+
+        emitWhotState(roomId);
+    });
+
     socket.on('leave_queue', (data) => {
         const { username } = data;
         waitingPlayers = waitingPlayers.filter(p => p.username !== username);
         broadcastLoungeStats();
     });
 
+    // ==========================================
+    // ADMIN & SUPPORT HANDLERS
+    // ==========================================
     socket.on('get_house_revenue', async (callback) => {
         try {
             const sumRes = await pool.query('SELECT SUM(amount) AS total FROM admin_income_logs');
@@ -986,8 +1232,31 @@ io.on('connection', (socket) => {
         io.emit('receive_chat_message', chatPayload);
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
         waitingPlayers = waitingPlayers.filter(p => p.socketId !== socket.id);
+
+        // If a player disconnects during an active Whot match, forfeit to opponent
+        if (socket.authUsername) {
+            for (const [roomId, room] of Object.entries(activeRooms)) {
+                if (room.gameType === 'whot' && room.players.includes(socket.authUsername)) {
+                    const winner = room.players.find(p => p !== socket.authUsername);
+                    delete activeRooms[roomId];
+                    try {
+                        const payoutInfo = await settleMatchWinner(room, winner, 'Naija Whot (Opponent Disconnected)');
+                        io.to(roomId).emit('whot_game_over', {
+                            winner,
+                            reason: 'opponent_disconnected',
+                            netWinnings: payoutInfo.netWinnings,
+                            feeCharged: payoutInfo.feeCharged,
+                            commissionPercent: payoutInfo.commissionPercent
+                        });
+                    } catch (e) {
+                        console.error('Error settling disconnect forfeit:', e);
+                    }
+                }
+            }
+        }
+
         if (socket.authUsername && activeUserSessions[socket.authUsername] === socket.id) {
             delete activeUserSessions[socket.authUsername];
         }
