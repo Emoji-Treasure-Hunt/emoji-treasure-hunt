@@ -281,7 +281,7 @@ app.post('/verify-bank-account', (req, res) => {
 });
 
 // ==========================================
-// 3. MULTI-GAME ENGINE HELPERS (TREASURE, WHOT & LUDO)
+// 3. MULTI-GAME ENGINE HELPERS (TREASURE, WHOT, LUDO & SNOOKER)
 // ==========================================
 let waitingPlayers = [];
 let activeRooms = {};
@@ -430,12 +430,16 @@ io.on('connection', (socket) => {
         let whotActiveCounts = {};
         let ludoWaitingCounts = {};
         let ludoActiveCounts = {};
+        let snookerWaitingCounts = {};
+        let snookerActiveCounts = {};
 
         waitingPlayers.forEach(p => {
             if (p.gameType === 'whot') {
                 whotWaitingCounts[p.stake] = (whotWaitingCounts[p.stake] || 0) + 1;
             } else if (p.gameType === 'ludo') {
                 ludoWaitingCounts[p.stake] = (ludoWaitingCounts[p.stake] || 0) + 1;
+            } else if (p.gameType === 'snooker') {
+                snookerWaitingCounts[p.stake] = (snookerWaitingCounts[p.stake] || 0) + 1;
             } else {
                 waitingCounts[p.stake] = (waitingCounts[p.stake] || 0) + 1;
             }
@@ -446,12 +450,19 @@ io.on('connection', (socket) => {
                 whotActiveCounts[room.stake] = (whotActiveCounts[room.stake] || 0) + room.players.length;
             } else if (room.gameType === 'ludo') {
                 ludoActiveCounts[room.stake] = (ludoActiveCounts[room.stake] || 0) + room.players.length;
+            } else if (room.gameType === 'snooker') {
+                snookerActiveCounts[room.stake] = (snookerActiveCounts[room.stake] || 0) + room.players.length;
             } else {
                 activeCounts[room.stake] = (activeCounts[room.stake] || 0) + room.players.length;
             }
         });
 
-        io.emit('lounge_stats_update', { waitingCounts, activeCounts, whotWaitingCounts, whotActiveCounts, ludoWaitingCounts, ludoActiveCounts });
+        io.emit('lounge_stats_update', { 
+            waitingCounts, activeCounts, 
+            whotWaitingCounts, whotActiveCounts, 
+            ludoWaitingCounts, ludoActiveCounts, 
+            snookerWaitingCounts, snookerActiveCounts 
+        });
     };
 
     broadcastLoungeStats();
@@ -780,7 +791,7 @@ io.on('connection', (socket) => {
     });
 
     // ==========================================
-    // UNIFIED MULTI-GAME QUEUE (TREASURE, WHOT & LUDO)
+    // UNIFIED MULTI-GAME QUEUE (TREASURE, WHOT, LUDO & SNOOKER)
     // ==========================================
     socket.on('join_queue', async (data) => {
         const { username, stake, gameType = 'treasure' } = data;
@@ -819,6 +830,7 @@ io.on('connection', (socket) => {
                 let gameLabel = 'Emoji Treasure Hunt';
                 if (gameType === 'whot') gameLabel = 'Naija Whot';
                 if (gameType === 'ludo') gameLabel = 'Ludo Blitz';
+                if (gameType === 'snooker') gameLabel = 'Pro Snooker';
 
                 await client.query(
                     'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
@@ -880,6 +892,24 @@ io.on('connection', (socket) => {
 
                     io.to(roomId).emit('ludo_state_update', {
                         positions: activeRooms[roomId].positions,
+                        turn: activeRooms[roomId].turn,
+                        lastAction: activeRooms[roomId].lastAction
+                    });
+                } else if (gameType === 'snooker') {
+                    activeRooms[roomId] = {
+                        gameType: 'snooker',
+                        players: [player1.username, player2.username],
+                        stake: numericStake,
+                        scores: {
+                            [player1.username]: 0,
+                            [player2.username]: 0
+                        },
+                        turn: player1.username,
+                        lastAction: 'Pro Snooker match started! Take your shot.'
+                    };
+
+                    io.to(roomId).emit('snooker_state_update', {
+                        scores: activeRooms[roomId].scores,
                         turn: activeRooms[roomId].turn,
                         lastAction: activeRooms[roomId].lastAction
                     });
@@ -1165,6 +1195,54 @@ io.on('connection', (socket) => {
             positions: room.positions,
             turn: room.turn,
             lastAction: `${username} moved token #${tokenIndex + 1}. Now ${opponent}'s turn!`
+        });
+    });
+
+    // ==========================================
+    // PRO SNOOKER 8-BALL QUICK DUEL ENGINE
+    // ==========================================
+    socket.on('snooker_take_shot', async (data) => {
+        const { roomId, username, power, angle } = data;
+        const room = activeRooms[roomId];
+        if (!room || room.gameType !== 'snooker') return;
+        if (room.turn !== username) return;
+
+        const opponent = room.players.find(p => p !== username);
+        
+        const successChance = Math.max(0.3, 0.9 - (Math.abs(angle - 45) / 100));
+        const scored = Math.random() < successChance;
+
+        if (scored) {
+            room.scores[username] = (room.scores[username] || 0) + 1;
+            room.lastAction = `${username} struck the cue ball cleanly and potted a ball! 🎱 (+1 point)`;
+            
+            if (room.scores[username] >= 3) {
+                delete activeRooms[roomId];
+                try {
+                    const payoutInfo = await settleMatchWinner(room, username, 'Pro Snooker');
+                    io.to(roomId).emit('snooker_game_over', {
+                        winner: username,
+                        netWinnings: payoutInfo.netWinnings,
+                        feeCharged: payoutInfo.feeCharged,
+                        commissionPercent: payoutInfo.commissionPercent
+                    });
+                } catch (err) {
+                    console.error('Error settling Snooker winner:', err);
+                } finally {
+                    broadcastLoungeStats();
+                }
+                return;
+            }
+            room.turn = username; 
+        } else {
+            room.turn = opponent;
+            room.lastAction = `${username} missed the shot! Turn passed to ${opponent}.`;
+        }
+
+        io.to(roomId).emit('snooker_state_update', {
+            scores: room.scores,
+            turn: room.turn,
+            lastAction: room.lastAction
         });
     });
 

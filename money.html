@@ -503,6 +503,7 @@
             </div>
             
             <div id="hamburger-dropdown" class="dropdown-menu">
+                <button class="dropdown-item" onclick="closeMenu(); showProfile()" style="color: var(--neon-blue);">👤 My Profile & Stats</button>
                 <button class="dropdown-item" onclick="closeMenu(); showReferralModal()" style="color: var(--neon-gold);">🎁 Refer & Earn (1%)</button>
                 <button class="dropdown-item" onclick="closeMenu(); showLeaderboard()">🏆 Top Players</button>
                 <button class="dropdown-item" onclick="closeMenu(); showTransactionHistory()">📜 History</button>
@@ -556,10 +557,10 @@
 
         <div class="group-card vip-card" onclick="selectGame('snooker')" style="cursor: pointer;">
             <div class="group-info">
-                <h3>🎱 Pro Snooker (Coming Soon)</h3>
+                <h3>🎱 Pro Snooker</h3>
                 <p>Quick 8-Ball pool physics duel.</p>
             </div>
-            <button class="group-btn vip-btn">Soon</button>
+            <button class="group-btn vip-btn">Play</button>
         </div>
     </div>
 
@@ -783,6 +784,97 @@
         </div>
     </div>
 
+    <!-- PRO SNOOKER LOBBY SCREEN -->
+    <div id="snooker-lobby-screen" class="screen-section">
+        <h1><span class="app-logo">🎱</span> Pro Snooker Arena</h1>
+        <div class="subtitle">Quick 8-Ball Pool Physics Duel</div>
+
+        <div class="user-panel">
+            <span>👤 <strong id="snooker-display-user"></strong></span>
+            <button class="btn-secondary" onclick="switchScreen('game-hub-screen')" style="margin-top: 0; padding: 6px 12px; font-size: 0.8rem;">← Arcade Lobby</button>
+        </div>
+
+        <p style="font-size: 0.85rem; color: #94a3b8; text-align: left; margin-bottom: 10px; text-transform: uppercase; font-family:'Orbitron',sans-serif;">Select Snooker Stake Tier:</p>
+
+        <div class="group-card">
+            <div class="group-info">
+                <h3>🎱 Snooker Micro Break</h3>
+                <p>Stake: ₦100 | 2 Players | Payout: ₦200</p>
+                <p id="snooker-stat-100" style="color: #00ff66; margin-top: 2px; font-size: 0.8rem;">🟢 0 Active | ⏳ 0 Waiting</p>
+            </div>
+            <button class="group-btn" onclick="joinSnookerQueue(100, 'Snooker Micro Break')">Play</button>
+        </div>
+
+        <div class="group-card">
+            <div class="group-info">
+                <h3>🥉 Snooker Rookie Cue</h3>
+                <p>Stake: ₦500 | 2 Players | Payout: ₦1,000</p>
+                <p id="snooker-stat-500" style="color: #00ff66; margin-top: 2px; font-size: 0.8rem;">🟢 0 Active | ⏳ 0 Waiting</p>
+            </div>
+            <button class="group-btn" onclick="joinSnookerQueue(500, 'Snooker Rookie Cue')">Play</button>
+        </div>
+
+        <div class="group-card">
+            <div class="group-info">
+                <h3>🥈 Snooker Pro Table</h3>
+                <p>Stake: ₦1,000 | 2 Players | Payout: ₦2,000</p>
+                <p id="snooker-stat-1000" style="color: #00ff66; margin-top: 2px; font-size: 0.8rem;">🟢 0 Active | ⏳ 0 Waiting</p>
+            </div>
+            <button class="group-btn" onclick="joinSnookerQueue(1000, 'Snooker Pro Table')">Play</button>
+        </div>
+
+        <div class="group-card vip-card">
+            <div class="group-info">
+                <h3>🥇 Snooker Gold Room</h3>
+                <p>Stake: ₦5,000 | 2 Players | Payout: ₦10,000</p>
+                <p id="snooker-stat-5000" style="color: var(--neon-gold); margin-top: 2px; font-size: 0.8rem;">🟢 0 Active | ⏳ 0 Waiting</p>
+            </div>
+            <button class="group-btn vip-btn" onclick="joinSnookerQueue(5000, 'Snooker Gold Room')">Play</button>
+        </div>
+
+        <div class="group-card vip-card">
+            <div class="group-info">
+                <h3>💎 Snooker Diamond Arena</h3>
+                <p>Stake: ₦10,000 | 2 Players | Payout: ₦20,000</p>
+                <p id="snooker-stat-10000" style="color: var(--neon-gold); margin-top: 2px; font-size: 0.8rem;">🟢 0 Active | ⏳ 0 Waiting</p>
+            </div>
+            <button class="group-btn vip-btn" onclick="joinSnookerQueue(10000, 'Snooker Diamond Arena')">Play</button>
+        </div>
+
+        <div class="group-card vip-card">
+            <div class="group-info">
+                <h3>👑 Snooker Executive Lounge</h3>
+                <p>Stake: ₦25,000 | 2 Players | Payout: ₦50,000</p>
+                <p id="snooker-stat-25000" style="color: var(--neon-gold); margin-top: 2px; font-size: 0.8rem;">🟢 0 Active | ⏳ 0 Waiting</p>
+            </div>
+            <button class="group-btn vip-btn" onclick="joinSnookerQueue(25000, 'Snooker Executive Lounge')">Play</button>
+        </div>
+    </div>
+
+    <!-- PLAYER PROFILE SCREEN -->
+    <div id="profile-screen" class="screen-section">
+        <h1>👤 Player Profile</h1>
+        <div class="subtitle">Your Arcade Career & Statistics</div>
+
+        <div class="wallet-card">
+            <div class="subtitle" style="margin-bottom: 4px;">Username</div>
+            <div id="profile-username" style="font-family: 'Orbitron', sans-serif; font-size: 1.5rem; color: var(--neon-blue); margin-bottom: 15px;">-</div>
+            
+            <div style="display: flex; justify-content: space-around; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
+                <div>
+                    <div style="font-size: 0.75rem; color: #94a3b8;">WALLET BALANCE</div>
+                    <div id="profile-balance" style="font-family: 'Orbitron', sans-serif; font-size: 1.1rem; color: var(--neon-green);">₦0.00</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.75rem; color: #94a3b8;">TOTAL WINS</div>
+                    <div id="profile-wins" style="font-family: 'Orbitron', sans-serif; font-size: 1.1rem; color: var(--neon-gold);">0</div>
+                </div>
+            </div>
+        </div>
+
+        <button class="btn btn-secondary" onclick="switchScreen('game-hub-screen')">Back to Arcade Hub</button>
+    </div>
+
     <!-- LUDO ACTIVE GAME BOARD SCREEN -->
     <div id="ludo-game-screen" class="screen-section">
         <h1 id="ludo-active-title">🎲 Ludo Blitz</h1>
@@ -803,6 +895,23 @@
             <button class="group-btn" onclick="moveLudoToken(1)">Move Token #2</button>
         </div>
         <div id="ludo-action-log" style="font-size: 0.85rem; color: var(--neon-gold);"></div>
+    </div>
+
+    <!-- PRO SNOOKER ACTIVE GAME SCREEN -->
+    <div id="snooker-game-screen" class="screen-section">
+        <h1 id="snooker-active-title">🎱 Pro Snooker</h1>
+        <div class="user-panel">
+            <span>⚔️ Rival: <strong id="snooker-opponent-name">Searching...</strong></span>
+            <button class="logout-btn" onclick="leaveSnookerGame()">Exit</button>
+        </div>
+
+        <div class="turn-indicator-box" id="snooker-turn-banner">⏳ Searching for Snooker opponent...</div>
+        
+        <div style="background: rgba(0,0,0,0.5); padding: 25px; border-radius: 12px; margin-bottom: 15px; border: 1px solid var(--neon-blue);">
+            <div style="font-size: 1.1rem; color: var(--neon-gold); margin-bottom: 15px;" id="snooker-scores-display">Potted Balls: You (0) - Rival (0)</div>
+            <button class="btn btn-success" id="snooker-shot-btn" onclick="takeSnookerShot()" disabled style="opacity: 0.5;">Take Cue Shot 🎱</button>
+        </div>
+        <div id="snooker-action-log" style="font-size: 0.85rem; color: var(--neon-gold);"></div>
     </div>
 
     <!-- NAIJA WHOT ACTIVE GAME SCREEN -->
@@ -1128,6 +1237,57 @@
         '💣', '🍌', '👻', '💀', '🐸', '💩', '🧊', '🌵', '🍅', '🧩', '🪵', '🌀'
     ];
 
+    // ==========================================
+    // IMMERSIVE WEB AUDIO FX ENGINE
+    // ==========================================
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    function playSound(type) {
+        if (!audioCtx) return;
+        if (audioCtx.state === 'suspended') { audioCtx.resume(); }
+
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        const now = audioCtx.currentTime;
+
+        if (type === 'click') {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(400, now);
+            osc.frequency.exponentialRampToValueAtTime(800, now + 0.05);
+            gain.gain.setValueAtTime(0.1, now);
+            gain.gain.linearRampToValueAtTime(0.01, now + 0.05);
+            osc.start(now);
+            osc.stop(now + 0.05);
+        } else if (type === 'card') {
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(300, now);
+            osc.frequency.exponentialRampToValueAtTime(150, now + 0.08);
+            gain.gain.setValueAtTime(0.15, now);
+            gain.gain.linearRampToValueAtTime(0.01, now + 0.08);
+            osc.start(now);
+            osc.stop(now + 0.08);
+        } else if (type === 'win') {
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(523.25, now); // C5
+            osc.frequency.setValueAtTime(659.25, now + 0.1); // E5
+            osc.frequency.setValueAtTime(783.99, now + 0.2); // G5
+            gain.gain.setValueAtTime(0.1, now);
+            gain.gain.linearRampToValueAtTime(0.01, now + 0.4);
+            osc.start(now);
+            osc.stop(now + 0.4);
+        } else if (type === 'beep') {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(880, now);
+            gain.gain.setValueAtTime(0.1, now);
+            gain.gain.linearRampToValueAtTime(0.01, now + 0.1);
+            osc.start(now);
+            osc.stop(now + 0.1);
+        }
+    }
+
     socket.on('connect', () => {
         console.log("Connected to the game server successfully!");
         loadAllBanks();
@@ -1148,7 +1308,7 @@
     });
 
     socket.on('lounge_stats_update', (data) => {
-        const { waitingCounts, activeCounts, whotWaitingCounts, whotActiveCounts, ludoWaitingCounts, ludoActiveCounts } = data;
+        const { waitingCounts, activeCounts, whotWaitingCounts, whotActiveCounts, ludoWaitingCounts, ludoActiveCounts, snookerWaitingCounts, snookerActiveCounts } = data;
         const stakeTiers = [100, 500, 1000, 5000, 10000, 25000];
         
         stakeTiers.forEach(stake => {
@@ -1172,6 +1332,13 @@
             if (lStatEl) {
                 lStatEl.innerHTML = `🟢 ${lActive} Active | ⏳ ${lWaiting} Waiting`;
             }
+
+            const sWaiting = snookerWaitingCounts && snookerWaitingCounts[stake] ? snookerWaitingCounts[stake] : 0;
+            const sActive = snookerActiveCounts && snookerActiveCounts[stake] ? snookerActiveCounts[stake] : 0;
+            const sStatEl = document.getElementById(`snooker-stat-${stake}`);
+            if (sStatEl) {
+                sStatEl.innerHTML = `🟢 ${sActive} Active | ⏳ ${sWaiting} Waiting`;
+            }
         });
     });
 
@@ -1186,10 +1353,12 @@
             const lobbyUser2 = document.getElementById('lobby-display-user-2');
             const whotUser = document.getElementById('whot-display-user');
             const ludoUser = document.getElementById('ludo-display-user');
+            const snookerUser = document.getElementById('snooker-display-user');
             if (hubUser) hubUser.innerText = savedUser;
             if (lobbyUser2) lobbyUser2.innerText = savedUser;
             if (whotUser) whotUser.innerText = savedUser;
             if (ludoUser) ludoUser.innerText = savedUser;
+            if (snookerUser) snookerUser.innerText = savedUser;
             
             updateLobbyWallet();
 
@@ -1201,6 +1370,7 @@
     }
 
     function selectGame(gameId) {
+        playSound('click');
         if (gameId === 'treasure') {
             switchScreen('lobby-screen');
             updateLobbyWallet();
@@ -1210,9 +1380,20 @@
         } else if (gameId === 'ludo') {
             switchScreen('ludo-lobby-screen');
             updateLobbyWallet();
-        } else {
-            alert("🎱 Pro Snooker launching next week! Jump into Ludo, Whot, or Treasure Hunt right now.");
+        } else if (gameId === 'snooker') {
+            switchScreen('snooker-lobby-screen');
+            document.getElementById('snooker-display-user').innerText = currentUser;
+            updateLobbyWallet();
         }
+    }
+
+    function showProfile() {
+        playSound('click');
+        switchScreen('profile-screen');
+        let userObj = getCurrentUserObj();
+        document.getElementById('profile-username').innerText = currentUser;
+        document.getElementById('profile-balance').innerText = `₦${userObj.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
+        document.getElementById('profile-wins').innerText = userObj.totalWins || 0;
     }
 
     function joinGameQueue(stakeAmount, groupName) {
@@ -1261,6 +1442,7 @@
     }
 
     socket.on('match_found', (data) => {
+        playSound('win');
         currentRoomId = data.roomId;
         const currentUsername = localStorage.getItem('emoji_current_user_secure');
         roomPlayers = data.players; 
@@ -1334,6 +1516,7 @@
         if (isMyTurn) {
             turnEl.innerHTML = `👉 <strong style="color: #00ff66;">YOUR TURN!</strong> (${turnTimeLeft}s left)`;
             turnEl.style.borderColor = '#00ff66';
+            playSound('beep');
         } else {
             turnEl.innerHTML = `⏳ <strong style="color: #ff003c;">OPPONENT'S TURN</strong> (${turnTimeLeft}s left)`;
             turnEl.style.borderColor = '#ff003c';
@@ -1360,6 +1543,7 @@
 
     socket.on('opponent_played', (data) => {
         if (!gameActive) return;
+        playSound('card');
         const boxes = document.querySelectorAll('.box');
         const box = boxes[data.index];
         if (box && !box.classList.contains('revealed')) {
@@ -1401,6 +1585,11 @@
             document.getElementById('message').innerHTML = `⏱️ Match timed out! It's a draw. Your ₦${selectedStake.toLocaleString()} stake has been refunded.`;
             document.getElementById('turn-indicator').innerText = "Match Draw (Refunded)";
         } else if (data.winner === currentUsername) {
+            playSound('win');
+            let userObj = getCurrentUserObj();
+            userObj.totalWins = (userObj.totalWins || 0) + 1;
+            saveUserData(userObj);
+
             const feeText = data.feeCharged ? `₦${data.feeCharged.toLocaleString()} (${data.commissionPercent}% commission)` : `commission`;
             document.getElementById('message').innerHTML = `🎉 Congratulations! You won ₦${data.netWinnings.toLocaleString()} after ${feeText} was deducted.`;
             document.getElementById('turn-indicator').innerHTML = `<strong style="color: #00ff66;">🎉 Victory! You Won!</strong>`;
@@ -1435,6 +1624,7 @@
     }
 
     function showReferralModal() {
+        playSound('click');
         switchScreen('referral-screen');
         const linkBox = document.getElementById('referral-link-box');
         linkBox.value = `${window.location.origin}/?ref=${encodeURIComponent(currentUser)}`;
@@ -1443,6 +1633,7 @@
     }
 
     function copyReferralLink() {
+        playSound('click');
         const linkBox = document.getElementById('referral-link-box');
         linkBox.select();
         linkBox.setSelectionRange(0, 99999);
@@ -1478,6 +1669,7 @@
     }
 
     function toggleHamburgerMenu() {
+        playSound('click');
         const menu = document.getElementById('hamburger-dropdown');
         menu.classList.toggle('active');
     }
@@ -1496,10 +1688,12 @@
     }
 
     function showSupportModal() {
+        playSound('click');
         switchScreen('support-screen');
     }
 
     function showTransactionHistory() {
+        playSound('click');
         switchScreen('transaction-history-screen');
         const container = document.getElementById('transaction-container');
         container.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 20px;">Loading transactions from database...</div>`;
@@ -1544,11 +1738,13 @@
     }
 
     function returnToHubFromTransactions() {
+        playSound('click');
         switchScreen('game-hub-screen');
         updateLobbyWallet();
     }
 
     function showAdminDashboard() {
+        playSound('click');
         let adminPassword = prompt("🔐 Enter Admin Security Password:");
         const SECURE_ADMIN_PASS = "onyejeAdmin2026@"; 
 
@@ -1953,6 +2149,7 @@
     }
 
     function handleAuth() {
+        playSound('click');
         const username = document.getElementById('username-input').value.trim();
         const password = document.getElementById('password-input').value.trim();
         const msgEl = document.getElementById('auth-msg');
@@ -2035,6 +2232,7 @@
     }
 
     function verifyOTP() {
+        playSound('click');
         const enteredOTP = document.getElementById('otp-input').value.trim();
         const msgEl = document.getElementById('auth-msg');
 
@@ -2108,6 +2306,7 @@
     }
 
     function logout() {
+        playSound('click');
         if (gameActive) return;
         currentUser = null;
         selectedStake = 0;
@@ -2165,6 +2364,7 @@
     }
 
     function showWalletCashier() {
+        playSound('click');
         switchScreen('wallet-screen');
         updateLobbyWallet();
         
@@ -2182,6 +2382,7 @@
     }
 
     function switchWalletTab(tab) {
+        playSound('click');
         const depBtn = document.getElementById('tab-deposit-btn');
         const wthBtn = document.getElementById('tab-withdraw-btn');
         const depForm = document.getElementById('deposit-form');
@@ -2201,6 +2402,7 @@
     }
 
     function processDeposit() {
+        playSound('click');
         const amount = parseFloat(document.getElementById('deposit-amount').value);
         const msgEl = document.getElementById('deposit-msg');
 
@@ -2239,6 +2441,7 @@
     }
 
     function processWithdrawal() {
+        playSound('click');
         const amount = parseFloat(document.getElementById('withdraw-amount').value);
         const bankSelect = document.getElementById('bank-name');
         const bankCode = bankSelect.value;
@@ -2297,11 +2500,13 @@
     }
 
     function returnToHubFromWallet() {
+        playSound('click');
         switchScreen('game-hub-screen');
         updateLobbyWallet();
     }
 
     function showChangePasswordScreen() {
+        playSound('click');
         switchScreen('change-password-screen');
         document.getElementById('old-password').value = '';
         document.getElementById('new-password').value = '';
@@ -2309,6 +2514,7 @@
     }
 
     function executeChangePassword() {
+        playSound('click');
         const oldPwd = document.getElementById('old-password').value.trim();
         const newPwd = document.getElementById('new-password').value.trim();
         const msgEl = document.getElementById('change-pwd-msg');
@@ -2327,11 +2533,13 @@
     }
 
     function returnToHub() {
+        playSound('click');
         switchScreen('game-hub-screen');
         updateLobbyWallet();
     }
 
     function returnToLobby() {
+        playSound('click');
         if (gameActive) {
             alert("⚠️ You cannot leave the room while an active match is in progress!");
             return;
@@ -2348,6 +2556,7 @@
     }
 
     function showLeaderboard() {
+        playSound('click');
         switchScreen('leaderboard-screen');
         const container = document.getElementById('leaderboard-container');
         container.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 20px;">Loading top players from database...</div>`;
@@ -2385,6 +2594,7 @@
     }
 
     function returnToHubFromLeaderboard() {
+        playSound('click');
         switchScreen('game-hub-screen');
         updateLobbyWallet();
     }
@@ -2392,6 +2602,7 @@
     function selectBox(index, boxEl) {
         if (!gameActive || !isMyTurn) return;
 
+        playSound('click');
         const messageEl = document.getElementById('message');
         
         if (index === treasureIndex) {
@@ -2494,6 +2705,7 @@
     };
 
     function joinWhotQueue(stakeAmount, roomTitle) {
+        playSound('click');
         const username = localStorage.getItem('emoji_current_user_secure');
         if (!username) return alert("Please log in first!");
 
@@ -2535,6 +2747,7 @@
                 ? `⚠️ <strong style="color:#facc15;">TAP MARKET TO DRAW ${state.pendingPick} CARDS!</strong>`
                 : `👉 <strong style="color:#00ff66;">YOUR TURN! (8s left)</strong>`;
             turnBanner.style.borderColor = '#00ff66';
+            playSound('beep');
         } else {
             clearInterval(whotTurnInterval);
             turnBanner.innerHTML = `⏳ <strong style="color:#ff003c;">${state.opponentName}'S TURN...</strong>`;
@@ -2596,6 +2809,7 @@
 
     function playWhotCard(cardIndex, card) {
         if (!gameActive || !isMyTurn) return;
+        playSound('card');
         clearInterval(whotTurnInterval);
         if (card.shape === 'whot') {
             pendingWhot20CardIndex = cardIndex;
@@ -2610,6 +2824,7 @@
     }
 
     function confirmWhot20Shape(chosenShape) {
+        playSound('click');
         document.getElementById('whot-shape-picker').style.display = 'none';
         if (pendingWhot20CardIndex === null) return;
         socket.emit('whot_play_card', {
@@ -2623,6 +2838,7 @@
 
     function drawWhotCard() {
         if (!gameActive || !isMyTurn) return;
+        playSound('card');
         clearInterval(whotTurnInterval);
         socket.emit('whot_draw_card', {
             roomId: currentRoomId,
@@ -2640,6 +2856,11 @@
         clearInterval(whotTurnInterval);
         const turnBanner = document.getElementById('whot-turn-banner');
         if (data.winner === currentUser) {
+            playSound('win');
+            let userObj = getCurrentUserObj();
+            userObj.totalWins = (userObj.totalWins || 0) + 1;
+            saveUserData(userObj);
+
             turnBanner.innerHTML = `<strong style="color:#00ff66;">🎉 VICTORY! YOU WON ₦${data.netWinnings.toLocaleString()}!</strong>`;
             document.getElementById('whot-action-log').innerText = `Credited to your wallet (after ${data.commissionPercent}% fee).`;
         } else {
@@ -2649,6 +2870,7 @@
     });
 
     function leaveWhotGame() {
+        playSound('click');
         if (gameActive) {
             alert("⚠️ You cannot leave an active Whot match in progress!");
             return;
@@ -2666,6 +2888,7 @@
     // LUDO BLITZ CLIENT LOGIC
     // ==========================================
     function joinLudoQueue(stakeAmount, roomTitle) {
+        playSound('click');
         const username = localStorage.getItem('emoji_current_user_secure');
         if (!username) return alert("Please log in first!");
 
@@ -2697,6 +2920,7 @@
 
         const turnBanner = document.getElementById('ludo-turn-banner');
         turnBanner.innerHTML = isMyTurn ? `👉 <strong style="color:#00ff66;">YOUR TURN TO ROLL!</strong>` : `⏳ <strong style="color:#ff003c;">OPPONENT'S TURN...</strong>`;
+        if (isMyTurn) playSound('beep');
     });
 
     socket.on('ludo_action_log', (data) => {
@@ -2705,6 +2929,7 @@
 
     function rollLudoDice() {
         if (!gameActive || !isMyTurn) return;
+        playSound('click');
         socket.emit('ludo_roll_dice', { roomId: currentRoomId, username: currentUser });
     }
 
@@ -2714,6 +2939,7 @@
 
     function moveLudoToken(tokenIndex) {
         if (!gameActive || !isMyTurn) return;
+        playSound('click');
         socket.emit('ludo_move_token', { roomId: currentRoomId, username: currentUser, tokenIndex });
     }
 
@@ -2722,6 +2948,11 @@
         selectedStake = 0;
         const turnBanner = document.getElementById('ludo-turn-banner');
         if (data.winner === currentUser) {
+            playSound('win');
+            let userObj = getCurrentUserObj();
+            userObj.totalWins = (userObj.totalWins || 0) + 1;
+            saveUserData(userObj);
+
             turnBanner.innerHTML = `<strong style="color:#00ff66;">🎉 LUDO VICTORY! WON ₦${data.netWinnings.toLocaleString()}!</strong>`;
         } else {
             turnBanner.innerHTML = `<strong style="color:#ff003c;">❌ GAME OVER! ${data.winner} WON!</strong>`;
@@ -2730,9 +2961,90 @@
     });
 
     function leaveLudoGame() {
+        playSound('click');
         if (gameActive) return alert("⚠️ Match in progress!");
         if (selectedStake > 0) socket.emit('leave_queue', { username: currentUser });
         switchScreen('ludo-lobby-screen');
+        updateLobbyWallet();
+    }
+
+    // ==========================================
+    // PRO SNOOKER CLIENT LOGIC
+    // ==========================================
+    function joinSnookerQueue(stakeAmount, roomTitle) {
+        playSound('click');
+        const username = localStorage.getItem('emoji_current_user_secure');
+        if (!username) return alert("Please log in first!");
+
+        let userObj = getCurrentUserObj();
+        if (userObj.balance < stakeAmount) {
+            return alert(`Insufficient balance! Need at least ₦${stakeAmount.toLocaleString()}.`);
+        }
+
+        selectedStake = stakeAmount;
+        gameActive = false;
+        switchScreen('snooker-game-screen');
+        document.getElementById('snooker-active-title').innerText = `${roomTitle} (₦${stakeAmount.toLocaleString()})`;
+        document.getElementById('snooker-turn-banner').innerText = '⏳ Waiting for Snooker opponent...';
+
+        socket.emit('join_queue', {
+            username,
+            stake: stakeAmount,
+            gameType: 'snooker'
+        });
+    }
+
+    socket.on('snooker_state_update', (state) => {
+        gameActive = true;
+        isMyTurn = (state.turn === currentUser);
+
+        document.getElementById('snooker-action-log').innerText = state.lastAction || '';
+        document.getElementById('snooker-shot-btn').disabled = !isMyTurn;
+        document.getElementById('snooker-shot-btn').style.opacity = isMyTurn ? '1' : '0.5';
+
+        const myScore = state.scores[currentUser] || 0;
+        const opponentName = document.getElementById('snooker-opponent-name').innerText;
+        const oppScore = state.scores[opponentName] || 0;
+        document.getElementById('snooker-scores-display').innerText = `Potted Balls: You (${myScore}) - Rival (${oppScore})`;
+
+        const turnBanner = document.getElementById('snooker-turn-banner');
+        turnBanner.innerHTML = isMyTurn ? `👉 <strong style="color:#00ff66;">YOUR SHOT!</strong>` : `⏳ <strong style="color:#ff003c;">OPPONENT'S SHOT...</strong>`;
+        if (isMyTurn) playSound('beep');
+    });
+
+    function takeSnookerShot() {
+        if (!gameActive || !isMyTurn) return;
+        playSound('click');
+        socket.emit('snooker_take_shot', {
+            roomId: currentRoomId,
+            username: currentUser,
+            power: Math.floor(Math.random() * 50) + 50,
+            angle: 45
+        });
+    }
+
+    socket.on('snooker_game_over', (data) => {
+        gameActive = false;
+        selectedStake = 0;
+        const turnBanner = document.getElementById('snooker-turn-banner');
+        if (data.winner === currentUser) {
+            playSound('win');
+            let userObj = getCurrentUserObj();
+            userObj.totalWins = (userObj.totalWins || 0) + 1;
+            saveUserData(userObj);
+
+            turnBanner.innerHTML = `<strong style="color:#00ff66;">🎉 SNOOKER VICTORY! WON ₦${data.netWinnings.toLocaleString()}!</strong>`;
+        } else {
+            turnBanner.innerHTML = `<strong style="color:#ff003c;">❌ GAME OVER! ${data.winner} WON!</strong>`;
+        }
+        updateLobbyWallet();
+    });
+
+    function leaveSnookerGame() {
+        playSound('click');
+        if (gameActive) return alert("⚠️ Match in progress!");
+        if (selectedStake > 0) socket.emit('leave_queue', { username: currentUser });
+        switchScreen('snooker-lobby-screen');
         updateLobbyWallet();
     }
 </script>
