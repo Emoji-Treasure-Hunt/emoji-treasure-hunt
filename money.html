@@ -628,6 +628,14 @@
             <button class="group-btn vip-btn" onclick="joinGameQueue(25000, 'Executive VIP Lounge')">Play</button>
         </div>
 
+        <!-- WHATSAPP INVITE CONTAINER -->
+        <div id="whatsapp-invite-box" style="display: none; margin-top: 15px; padding: 12px; background: rgba(37, 211, 102, 0.1); border: 1px solid #25D366; border-radius: 8px;">
+            <p style="margin: 0 0 8px 0; font-size: 0.85rem; color: #25D366; font-family:'Orbitron',sans-serif;">📱 Want to play with a friend?</p>
+            <button class="btn" style="background: linear-gradient(45deg, #128C7E, #25D366); color: #fff; margin-top: 0; padding: 10px; font-size: 0.85rem;" onclick="shareWhatsAppInvite()">
+                📲 Send WhatsApp Challenge Link
+            </button>
+        </div>
+
         <!-- GROUP CHAT ROOM SECTION -->
         <div class="chat-container">
             <h3 style="font-size: 0.9rem; color: var(--neon-blue); margin: 0 0 8px 0; font-family:'Orbitron',sans-serif;">💬 Hunters Live Chat</h3>
@@ -1080,6 +1088,14 @@
             Waiting for match...
         </div>
 
+        <!-- WHATSAPP INVITE CONTAINER -->
+        <div id="whatsapp-invite-box" style="display: none; margin-bottom: 15px; padding: 12px; background: rgba(37, 211, 102, 0.1); border: 1px solid #25D366; border-radius: 8px;">
+            <p style="margin: 0 0 8px 0; font-size: 0.85rem; color: #25D366; font-family:'Orbitron',sans-serif;">📱 Want to play with a friend?</p>
+            <button class="btn" style="background: linear-gradient(45deg, #128C7E, #25D366); color: #fff; margin-top: 0; padding: 10px; font-size: 0.85rem;" onclick="shareWhatsAppInvite()">
+                📲 Send WhatsApp Challenge Link
+            </button>
+        </div>
+
         <div class="grid" id="game-grid"></div>
 
         <button class="btn btn-secondary" id="back-to-lobby-btn" onclick="returnToLobby()" style="margin-top: 8px;">Back to Lobby</button>
@@ -1223,6 +1239,7 @@
         
         document.getElementById('message').innerText = "⏳ Looking for an opponent... Please wait!";
         document.getElementById('turn-indicator').innerText = "Searching queue...";
+        document.getElementById('whatsapp-invite-box').style.display = 'block';
 
         const gridEl = document.getElementById('game-grid');
         gridEl.innerHTML = '';
@@ -1253,6 +1270,7 @@
         isMyTurn = (currentTurnPlayer === currentUsername);
 
         document.getElementById('message').innerText = `🎉 Match found against ${opponentName}! Game starting...`;
+        document.getElementById('whatsapp-invite-box').style.display = 'none';
         
         currentTreasureEmoji = data.targetEmoji;
         treasureIndex = data.winningIndex;
@@ -1302,6 +1320,12 @@
             }
         }, 1000);
     });
+
+    function shareWhatsAppInvite() {
+        const stakeText = selectedStake ? `₦${selectedStake.toLocaleString()}` : 'our match';
+        const text = encodeURIComponent(`Bro, let's play right now! I just set up a ${stakeText} table on Emoji Treasure Hunt Arcade. Click here to join my table: ${window.location.origin}/?ref=${encodeURIComponent(currentUser)}`);
+        window.open(`https://wa.me/?text=${text}`, '_blank');
+    }
 
     function updateTurnDisplay() {
         const turnEl = document.getElementById('turn-indicator');
@@ -1359,6 +1383,7 @@
     socket.on('game_over', (data) => {
         clearInterval(timerInterval);
         gameActive = false;
+        document.getElementById('whatsapp-invite-box').style.display = 'none';
         
         const boxes = document.querySelectorAll('.box');
         boxes.forEach((box, idx) => {
