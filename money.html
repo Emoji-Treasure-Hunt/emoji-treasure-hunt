@@ -1248,56 +1248,7 @@
         '💣', '🍌', '👻', '💀', '🐸', '💩', '🧊', '🌵', '🍅', '🧩', '🪵', '🌀'
     ];
 
-    // ==========================================
-    // IMMERSIVE WEB AUDIO FX ENGINE
-    // ==========================================
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-    function playSound(type) {
-        if (!audioCtx) return;
-        if (audioCtx.state === 'suspended') { audioCtx.resume(); }
-
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-
-        const now = audioCtx.currentTime;
-
-        if (type === 'click') {
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(400, now);
-            osc.frequency.exponentialRampToValueAtTime(800, now + 0.05);
-            gain.gain.setValueAtTime(0.1, now);
-            gain.gain.linearRampToValueAtTime(0.01, now + 0.05);
-            osc.start(now);
-            osc.stop(now + 0.05);
-        } else if (type === 'card') {
-            osc.type = 'triangle';
-            osc.frequency.setValueAtTime(300, now);
-            osc.frequency.exponentialRampToValueAtTime(150, now + 0.08);
-            gain.gain.setValueAtTime(0.15, now);
-            gain.gain.linearRampToValueAtTime(0.01, now + 0.08);
-            osc.start(now);
-            osc.stop(now + 0.08);
-        } else if (type === 'win') {
-            osc.type = 'square';
-            osc.frequency.setValueAtTime(523.25, now); // C5
-            osc.frequency.setValueAtTime(659.25, now + 0.1); // E5
-            osc.frequency.setValueAtTime(783.99, now + 0.2); // G5
-            gain.gain.setValueAtTime(0.1, now);
-            gain.gain.linearRampToValueAtTime(0.01, now + 0.4);
-            osc.start(now);
-            osc.stop(now + 0.4);
-        } else if (type === 'beep') {
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(880, now);
-            gain.gain.setValueAtTime(0.1, now);
-            gain.gain.linearRampToValueAtTime(0.01, now + 0.1);
-            osc.start(now);
-            osc.stop(now + 0.1);
-        }
-    }
+    // Sound engine removed per user request
 
     socket.on('connect', () => {
         console.log("Connected to the game server successfully!");
@@ -1381,7 +1332,6 @@
     }
 
     function selectGame(gameId) {
-        playSound('click');
         if (gameId === 'treasure') {
             switchScreen('lobby-screen');
             updateLobbyWallet();
@@ -1399,7 +1349,6 @@
     }
 
     function showProfile() {
-        playSound('click');
         switchScreen('profile-screen');
         let userObj = getCurrentUserObj();
         document.getElementById('profile-username').innerText = currentUser;
@@ -1453,7 +1402,6 @@
     }
 
     socket.on('match_found', (data) => {
-        playSound('win');
         currentRoomId = data.roomId;
         const currentUsername = localStorage.getItem('emoji_current_user_secure');
         roomPlayers = data.players; 
@@ -1527,7 +1475,6 @@
         if (isMyTurn) {
             turnEl.innerHTML = `👉 <strong style="color: #00ff66;">YOUR TURN!</strong> (${turnTimeLeft}s left)`;
             turnEl.style.borderColor = '#00ff66';
-            playSound('beep');
         } else {
             turnEl.innerHTML = `⏳ <strong style="color: #ff003c;">OPPONENT'S TURN</strong> (${turnTimeLeft}s left)`;
             turnEl.style.borderColor = '#ff003c';
@@ -1554,7 +1501,6 @@
 
     socket.on('opponent_played', (data) => {
         if (!gameActive) return;
-        playSound('card');
         const boxes = document.querySelectorAll('.box');
         const box = boxes[data.index];
         if (box && !box.classList.contains('revealed')) {
@@ -1596,7 +1542,6 @@
             document.getElementById('message').innerHTML = `⏱️ Match timed out! It's a draw. Your ₦${selectedStake.toLocaleString()} stake has been refunded.`;
             document.getElementById('turn-indicator').innerText = "Match Draw (Refunded)";
         } else if (data.winner === currentUsername) {
-            playSound('win');
             let userObj = getCurrentUserObj();
             userObj.totalWins = (userObj.totalWins || 0) + 1;
             saveUserData(userObj);
@@ -1635,7 +1580,6 @@
     }
 
     function showReferralModal() {
-        playSound('click');
         switchScreen('referral-screen');
         const linkBox = document.getElementById('referral-link-box');
         linkBox.value = `${window.location.origin}/?ref=${encodeURIComponent(currentUser)}`;
@@ -1644,7 +1588,6 @@
     }
 
     function copyReferralLink() {
-        playSound('click');
         const linkBox = document.getElementById('referral-link-box');
         linkBox.select();
         linkBox.setSelectionRange(0, 99999);
@@ -1680,7 +1623,6 @@
     }
 
     function toggleHamburgerMenu() {
-        playSound('click');
         const menu = document.getElementById('hamburger-dropdown');
         menu.classList.toggle('active');
     }
@@ -1699,12 +1641,10 @@
     }
 
     function showSupportModal() {
-        playSound('click');
         switchScreen('support-screen');
     }
 
     function showTransactionHistory() {
-        playSound('click');
         switchScreen('transaction-history-screen');
         const container = document.getElementById('transaction-container');
         container.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 20px;">Loading transactions from database...</div>`;
@@ -1749,13 +1689,11 @@
     }
 
     function returnToHubFromTransactions() {
-        playSound('click');
         switchScreen('game-hub-screen');
         updateLobbyWallet();
     }
 
     function showAdminDashboard() {
-        playSound('click');
         let adminPassword = prompt("🔐 Enter Admin Security Password:");
         const SECURE_ADMIN_PASS = "onyejeAdmin2026@"; 
 
@@ -2160,7 +2098,6 @@
     }
 
     function handleAuth() {
-        playSound('click');
         const username = document.getElementById('username-input').value.trim();
         const password = document.getElementById('password-input').value.trim();
         const msgEl = document.getElementById('auth-msg');
@@ -2243,7 +2180,6 @@
     }
 
     function verifyOTP() {
-        playSound('click');
         const enteredOTP = document.getElementById('otp-input').value.trim();
         const msgEl = document.getElementById('auth-msg');
 
@@ -2321,7 +2257,6 @@
     }
 
     function logout() {
-        playSound('click');
         if (gameActive) return;
         currentUser = null;
         selectedStake = 0;
@@ -2379,7 +2314,6 @@
     }
 
     function showWalletCashier() {
-        playSound('click');
         switchScreen('wallet-screen');
         updateLobbyWallet();
         
@@ -2397,7 +2331,6 @@
     }
 
     function switchWalletTab(tab) {
-        playSound('click');
         const depBtn = document.getElementById('tab-deposit-btn');
         const wthBtn = document.getElementById('tab-withdraw-btn');
         const depForm = document.getElementById('deposit-form');
@@ -2417,7 +2350,6 @@
     }
 
     function processDeposit() {
-        playSound('click');
         const amount = parseFloat(document.getElementById('deposit-amount').value);
         const msgEl = document.getElementById('deposit-msg');
 
@@ -2456,7 +2388,6 @@
     }
 
     function processWithdrawal() {
-        playSound('click');
         const amount = parseFloat(document.getElementById('withdraw-amount').value);
         const bankSelect = document.getElementById('bank-name');
         const bankCode = bankSelect.value;
@@ -2515,13 +2446,11 @@
     }
 
     function returnToHubFromWallet() {
-        playSound('click');
         switchScreen('game-hub-screen');
         updateLobbyWallet();
     }
 
     function showChangePasswordScreen() {
-        playSound('click');
         switchScreen('change-password-screen');
         document.getElementById('old-password').value = '';
         document.getElementById('new-password').value = '';
@@ -2529,7 +2458,6 @@
     }
 
     function executeChangePassword() {
-        playSound('click');
         const oldPwd = document.getElementById('old-password').value.trim();
         const newPwd = document.getElementById('new-password').value.trim();
         const msgEl = document.getElementById('change-pwd-msg');
@@ -2548,13 +2476,11 @@
     }
 
     function returnToHub() {
-        playSound('click');
         switchScreen('game-hub-screen');
         updateLobbyWallet();
     }
 
     function returnToLobby() {
-        playSound('click');
         if (gameActive) {
             alert("⚠️ You cannot leave the room while an active match is in progress!");
             return;
@@ -2571,7 +2497,6 @@
     }
 
     function showLeaderboard() {
-        playSound('click');
         switchScreen('leaderboard-screen');
         const container = document.getElementById('leaderboard-container');
         container.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 20px;">Loading top players from database...</div>`;
@@ -2609,7 +2534,6 @@
     }
 
     function returnToHubFromLeaderboard() {
-        playSound('click');
         switchScreen('game-hub-screen');
         updateLobbyWallet();
     }
@@ -2617,7 +2541,6 @@
     function selectBox(index, boxEl) {
         if (!gameActive || !isMyTurn) return;
 
-        playSound('click');
         const messageEl = document.getElementById('message');
         
         if (index === treasureIndex) {
@@ -2720,7 +2643,6 @@
     };
 
     function joinWhotQueue(stakeAmount, roomTitle) {
-        playSound('click');
         const username = localStorage.getItem('emoji_current_user_secure');
         if (!username) return alert("Please log in first!");
 
@@ -2762,7 +2684,6 @@
                 ? `⚠️ <strong style="color:#facc15;">TAP MARKET TO DRAW ${state.pendingPick} CARDS!</strong>`
                 : `👉 <strong style="color:#00ff66;">YOUR TURN! (8s left)</strong>`;
             turnBanner.style.borderColor = '#00ff66';
-            playSound('beep');
         } else {
             clearInterval(whotTurnInterval);
             turnBanner.innerHTML = `⏳ <strong style="color:#ff003c;">${state.opponentName}'S TURN...</strong>`;
@@ -2824,7 +2745,6 @@
 
     function playWhotCard(cardIndex, card) {
         if (!gameActive || !isMyTurn) return;
-        playSound('card');
         clearInterval(whotTurnInterval);
         if (card.shape === 'whot') {
             pendingWhot20CardIndex = cardIndex;
@@ -2839,7 +2759,6 @@
     }
 
     function confirmWhot20Shape(chosenShape) {
-        playSound('click');
         document.getElementById('whot-shape-picker').style.display = 'none';
         if (pendingWhot20CardIndex === null) return;
         socket.emit('whot_play_card', {
@@ -2853,7 +2772,6 @@
 
     function drawWhotCard() {
         if (!gameActive || !isMyTurn) return;
-        playSound('card');
         clearInterval(whotTurnInterval);
         socket.emit('whot_draw_card', {
             roomId: currentRoomId,
@@ -2871,7 +2789,6 @@
         clearInterval(whotTurnInterval);
         const turnBanner = document.getElementById('whot-turn-banner');
         if (data.winner === currentUser) {
-            playSound('win');
             let userObj = getCurrentUserObj();
             userObj.totalWins = (userObj.totalWins || 0) + 1;
             saveUserData(userObj);
@@ -2885,7 +2802,6 @@
     });
 
     function leaveWhotGame() {
-        playSound('click');
         if (gameActive) {
             alert("⚠️ You cannot leave an active Whot match in progress!");
             return;
@@ -2903,7 +2819,6 @@
     // LUDO BLITZ CLIENT LOGIC
     // ==========================================
     function joinLudoQueue(stakeAmount, roomTitle) {
-        playSound('click');
         const username = localStorage.getItem('emoji_current_user_secure');
         if (!username) return alert("Please log in first!");
 
@@ -2940,7 +2855,6 @@
 
         const turnBanner = document.getElementById('ludo-turn-banner');
         turnBanner.innerHTML = isMyTurn ? `👉 <strong style="color:#00ff66;">YOUR TURN TO ROLL!</strong>` : `⏳ <strong style="color:#ff003c;">OPPONENT'S TURN...</strong>`;
-        if (isMyTurn) playSound('beep');
     });
 
     socket.on('ludo_action_log', (data) => {
@@ -2949,7 +2863,6 @@
 
     function rollLudoDice() {
         if (!gameActive || !isMyTurn) return;
-        playSound('click');
         socket.emit('ludo_roll_dice', { roomId: currentRoomId, username: currentUser });
     }
 
@@ -2959,7 +2872,6 @@
 
     function moveLudoToken(tokenIndex) {
         if (!gameActive || !isMyTurn) return;
-        playSound('click');
         socket.emit('ludo_move_token', { roomId: currentRoomId, username: currentUser, tokenIndex });
     }
 
@@ -2968,7 +2880,6 @@
         selectedStake = 0;
         const turnBanner = document.getElementById('ludo-turn-banner');
         if (data.winner === currentUser) {
-            playSound('win');
             let userObj = getCurrentUserObj();
             userObj.totalWins = (userObj.totalWins || 0) + 1;
             saveUserData(userObj);
@@ -2981,7 +2892,6 @@
     });
 
     function leaveLudoGame() {
-        playSound('click');
         if (gameActive) return alert("⚠️ Match in progress!");
         if (selectedStake > 0) socket.emit('leave_queue', { username: currentUser });
         switchScreen('ludo-lobby-screen');
@@ -3035,7 +2945,6 @@
         snookerCanvas.onpointerup = (e) => {
             if (!isAiming) return;
             isAiming = false;
-            playSound('click');
 
             const rect = snookerCanvas.getBoundingClientRect();
             const mouseX = e.clientX - rect.left;
@@ -3115,7 +3024,6 @@
                         cueBall.active = false;
                         cueBall.x = 100; cueBall.y = 110; cueBall.vx = 0; cueBall.vy = 0;
                         setTimeout(() => { cueBall.active = true; }, 1000);
-                        playSound('win');
                     }
                 });
             }
@@ -3136,14 +3044,12 @@
                     if (Math.hypot(ball.x - p.x, ball.y - p.y) < 14) {
                         ball.potted = true;
                         ball.x = -100; ball.y = -100;
-                        playSound('win');
                     }
                 });
 
                 if (cueBall.active) {
                     const dist = Math.hypot(cueBall.x - ball.x, cueBall.y - ball.y);
                     if (dist < cueBall.radius + ball.radius) {
-                        playSound('click');
                         ball.vx += cueBall.vx * 0.75;
                         ball.vy += cueBall.vy * 0.75;
                         cueBall.vx *= -0.3;
@@ -3155,7 +3061,6 @@
                     if (other.number <= ball.number || other.potted) return;
                     const d = Math.hypot(other.x - ball.x, other.y - ball.y);
                     if (d < other.radius + ball.radius) {
-                        playSound('click');
                         let tempVx = other.vx; let tempVy = other.vy;
                         other.vx = ball.vx * 0.8; other.vy = ball.vy * 0.8;
                         ball.vx = tempVx * 0.8; ball.vy = tempVy * 0.8;
@@ -3212,7 +3117,6 @@
     }
 
     function joinSnookerQueue(stakeAmount, roomTitle) {
-        playSound('click');
         const username = localStorage.getItem('emoji_current_user_secure');
         if (!username) return alert("Please log in first!");
 
@@ -3249,7 +3153,6 @@
 
         const turnBanner = document.getElementById('snooker-turn-banner');
         turnBanner.innerHTML = isMyTurn ? `👉 <strong style="color:#00ff66;">YOUR SHOT! DRAG CUE BALL TO AIM & SHOOT</strong>` : `⏳ <strong style="color:#ff003c;">OPPONENT'S SHOT...</strong>`;
-        if (isMyTurn) playSound('beep');
     });
 
     socket.on('snooker_game_over', (data) => {
@@ -3257,7 +3160,6 @@
         selectedStake = 0;
         const turnBanner = document.getElementById('snooker-turn-banner');
         if (data.winner === currentUser) {
-            playSound('win');
             let userObj = getCurrentUserObj();
             userObj.totalWins = (userObj.totalWins || 0) + 1;
             saveUserData(userObj);
@@ -3270,7 +3172,6 @@
     });
 
     function leaveSnookerGame() {
-        playSound('click');
         if (gameActive) return alert("⚠️ Match in progress!");
         if (selectedStake > 0) socket.emit('leave_queue', { username: currentUser });
         switchScreen('snooker-lobby-screen');
