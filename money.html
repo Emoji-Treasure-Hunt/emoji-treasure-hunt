@@ -877,29 +877,30 @@
 
     <!-- LUDO ACTIVE GAME BOARD SCREEN -->
     <div id="ludo-game-screen" class="screen-section">
-        <h1 id="ludo-active-title">🎲 Ludo Blitz</h1>
+        <h1 id="ludo-active-title">🎲 Ludo Blitz Arena</h1>
         <div class="user-panel">
             <span>⚔️ Rival: <strong id="ludo-opponent-name">Searching...</strong></span>
             <button class="logout-btn" onclick="leaveLudoGame()">Exit</button>
         </div>
 
-        <div class="turn-indicator-box" id="ludo-turn-banner">⏳ Searching for Ludo opponent...</div>
+        <div class="turn-indicator-box" id="ludo-turn-banner">⏳ Waiting for Ludo opponent...</div>
         
-        <div style="background: rgba(0,0,0,0.5); padding: 20px; border-radius: 12px; margin-bottom: 15px; border: 1px solid var(--neon-blue);">
-            <div id="ludo-dice-box" style="font-size: 2.5rem; margin-bottom: 10px;">🎲 -</div>
-            <button class="btn btn-success" id="ludo-roll-btn" onclick="rollLudoDice()" disabled style="opacity: 0.5;">Roll Dice</button>
+        <!-- VISUAL LUDO TRACK CANVAS -->
+        <div style="position: relative; width: 100%; display: flex; justify-content: center; margin-bottom: 12px;">
+            <canvas id="ludo-canvas" width="380" height="140" style="background: #0f172a; border: 2px solid var(--neon-blue); border-radius: 12px; box-shadow: 0 0 20px rgba(0,243,255,0.2);"></canvas>
         </div>
 
-        <div style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; margin-bottom: 15px; font-family: 'Orbitron', sans-serif; font-size: 0.85rem; color: #f8fafc;">
-            <div>Your Token #1 Position: <span id="ludo-pos-0" style="color: var(--neon-green);">0</span> / 33</div>
-            <div>Your Token #2 Position: <span id="ludo-pos-1" style="color: var(--neon-gold);">0</span> / 33</div>
+        <div style="background: rgba(0,0,0,0.5); padding: 15px; border-radius: 12px; margin-bottom: 15px; border: 1px solid var(--glass-border);">
+            <div id="ludo-dice-box" style="font-family: 'Orbitron', sans-serif; font-size: 2rem; color: var(--neon-gold); margin-bottom: 10px;">🎲 Roll: -</div>
+            <button class="btn btn-success" id="ludo-roll-btn" onclick="rollLudoDice()" disabled style="opacity: 0.5;">Roll Dice 🎲</button>
         </div>
 
-        <div style="display: flex; gap: 15px; justify-content: center; margin-bottom: 15px;">
-            <button class="group-btn" onclick="moveLudoToken(0)">Advance Token #1</button>
-            <button class="group-btn" onclick="moveLudoToken(1)">Advance Token #2</button>
+        <div style="font-family: 'Orbitron', sans-serif; font-size: 0.8rem; color: #94a3b8; margin-bottom: 8px;">TAP TOKEN BELOW TO ADVANCE:</div>
+        <div style="display: flex; gap: 12px; justify-content: center; margin-bottom: 15px;">
+            <button class="group-btn" id="ludo-token-btn-0" onclick="moveLudoToken(0)">Token #1 (Step <span id="ludo-pos-0">0</span>)</button>
+            <button class="group-btn" id="ludo-token-btn-1" onclick="moveLudoToken(1)">Token #2 (Step <span id="ludo-pos-1">0</span>)</button>
         </div>
-        <div id="ludo-action-log" style="font-size: 0.85rem; color: var(--neon-gold);"></div>
+        <div id="ludo-action-log" style="font-size: 0.85rem; color: var(--neon-gold); min-height: 25px;"></div>
     </div>
 
     <!-- PRO SNOOKER ACTIVE GAME SCREEN -->
@@ -1248,7 +1249,8 @@
         '💣', '🍌', '👻', '💀', '🐸', '💩', '🧊', '🌵', '🍅', '🧩', '🪵', '🌀'
     ];
 
-    // Sound engine removed per user request
+    // Silent dummy audio function
+    function playSound(type) {}
 
     socket.on('connect', () => {
         console.log("Connected to the game server successfully!");
@@ -2230,6 +2232,8 @@
             targetScreen.classList.add('active');
             if (screenId === 'snooker-game-screen') {
                 setTimeout(initSnookerCanvas, 100);
+            } else if (screenId === 'ludo-game-screen') {
+                setTimeout(initLudoCanvas, 100);
             }
         }
     }
@@ -2816,8 +2820,11 @@
     }
 
     // ==========================================
-    // LUDO BLITZ CLIENT LOGIC
+    // PROFESSIONAL LUDO BLITZ CANVAS & TRACK ENGINE
     // ==========================================
+    let ludoCanvas, ludoCtx;
+    let ludoPositions = { player1: [0, 0], player2: [0, 0] };
+
     function joinLudoQueue(stakeAmount, roomTitle) {
         const username = localStorage.getItem('emoji_current_user_secure');
         if (!username) return alert("Please log in first!");
@@ -2840,6 +2847,89 @@
         });
     }
 
+    function initLudoCanvas() {
+        ludoCanvas = document.getElementById('ludo-canvas');
+        if (!ludoCanvas) return;
+        ludoCtx = ludoCanvas.getContext('2d');
+        requestAnimationFrame(drawLudoBoard);
+    }
+
+    function drawLudoBoard() {
+        if (!ludoCtx || !ludoCanvas) return;
+        ludoCtx.clearRect(0, 0, ludoCanvas.width, ludoCanvas.height);
+
+        // Draw Racing Track Background Path
+        ludoCtx.fillStyle = '#1e293b';
+        ludoCtx.beginPath();
+        ludoCtx.roundRect(20, 45, 340, 50, 25);
+        ludoCtx.fill();
+        ludoCtx.strokeStyle = 'rgba(0, 243, 255, 0.3)';
+        ludoCtx.lineWidth = 2;
+        ludoCtx.stroke();
+
+        // Draw Checkpoints / Steps along the track
+        for (let i = 1; i < 10; i++) {
+            let stepX = 20 + (i * 34);
+            ludoCtx.fillStyle = 'rgba(255,255,255,0.1)';
+            ludoCtx.beginPath();
+            ludoCtx.arc(stepX, 70, 4, 0, Math.PI * 2);
+            ludoCtx.fill();
+        }
+
+        // Finish Line
+        ludoCtx.fillStyle = '#facc15';
+        ludoCtx.font = '10px Orbitron';
+        ludoCtx.textAlign = 'center';
+        ludoCtx.fillText('🏁 FINISH (33)', 310, 32);
+
+        // Render Tokens on Track (User vs Rival)
+        let myTokens = ludoPositions[currentUser] || [0, 0];
+        let opponentName = roomPlayers.find(p => p !== currentUser) || 'Rival';
+        let oppTokens = ludoPositions[opponentName] || [0, 0];
+
+        // Draw My Tokens (Neon Green)
+        myTokens.forEach((pos, idx) => {
+            let px = 30 + (pos / 33) * 300;
+            let py = idx === 0 ? 60 : 80;
+            
+            ludoCtx.beginPath();
+            ludoCtx.arc(px, py, 10, 0, Math.PI * 2);
+            ludoCtx.fillStyle = '#00ff66';
+            ludoCtx.fill();
+            ludoCtx.lineWidth = 2;
+            ludoCtx.strokeStyle = '#fff';
+            ludoCtx.stroke();
+
+            ludoCtx.fillStyle = '#000';
+            ludoCtx.font = 'bold 9px Orbitron';
+            ludoCtx.textAlign = 'center';
+            ludoCtx.textBaseline = 'middle';
+            ludoCtx.fillText(`P1-${idx+1}`, px, py);
+        });
+
+        // Draw Opponent Tokens (Neon Red)
+        oppTokens.forEach((pos, idx) => {
+            let px = 30 + (pos / 33) * 300;
+            let py = idx === 0 ? 50 : 90;
+            
+            ludoCtx.beginPath();
+            ludoCtx.arc(px, py, 10, 0, Math.PI * 2);
+            ludoCtx.fillStyle = '#ff003c';
+            ludoCtx.fill();
+            ludoCtx.lineWidth = 2;
+            ludoCtx.strokeStyle = '#fff';
+            ludoCtx.stroke();
+
+            ludoCtx.fillStyle = '#fff';
+            ludoCtx.font = 'bold 9px Orbitron';
+            ludoCtx.textAlign = 'center';
+            ludoCtx.textBaseline = 'middle';
+            ludoCtx.fillText(`P2-${idx+1}`, px, py);
+        });
+
+        requestAnimationFrame(drawLudoBoard);
+    }
+
     socket.on('ludo_state_update', (state) => {
         gameActive = true;
         isMyTurn = (state.turn === currentUser);
@@ -2848,9 +2938,12 @@
         document.getElementById('ludo-roll-btn').disabled = !isMyTurn;
         document.getElementById('ludo-roll-btn').style.opacity = isMyTurn ? '1' : '0.5';
 
-        if (state.positions && state.positions[currentUser]) {
-            document.getElementById('ludo-pos-0').innerText = state.positions[currentUser][0];
-            document.getElementById('ludo-pos-1').innerText = state.positions[currentUser][1];
+        if (state.positions) {
+            ludoPositions = state.positions;
+            if (state.positions[currentUser]) {
+                document.getElementById('ludo-pos-0').innerText = state.positions[currentUser][0];
+                document.getElementById('ludo-pos-1').innerText = state.positions[currentUser][1];
+            }
         }
 
         const turnBanner = document.getElementById('ludo-turn-banner');
@@ -2867,7 +2960,7 @@
     }
 
     socket.on('ludo_dice_rolled', (data) => {
-        document.getElementById('ludo-dice-box').innerText = `🎲 ${data.diceRoll}`;
+        document.getElementById('ludo-dice-box').innerText = `🎲 Roll: ${data.diceRoll}`;
     });
 
     function moveLudoToken(tokenIndex) {
