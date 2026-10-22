@@ -883,7 +883,7 @@
             <button class="logout-btn" onclick="leaveLudoGame()">Exit</button>
         </div>
 
-        <div class="turn-indicator-box" id="ludo-turn-banner">⏳ Waiting for Ludo opponent...</div>
+        <div class="turn-indicator-box" id="ludo-turn-banner">⏳ Searching for Ludo opponent...</div>
         
         <!-- AUTHENTIC SQUARED LUDO BOARD CANVAS -->
         <div style="position: relative; width: 100%; display: flex; justify-content: center; margin-bottom: 12px;">
@@ -892,7 +892,7 @@
 
         <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.5); padding: 10px 15px; border-radius: 8px; margin-bottom: 12px; border: 1px solid var(--neon-gold);">
             <div id="ludo-dice-box" style="font-family: 'Orbitron', sans-serif; font-size: 1.2rem; color: var(--neon-gold);">🎲 Dice: -</div>
-            <button class="btn btn-success" id="ludo-roll-btn" onclick="rollLudoDice()" disabled style="opacity: 0.5; margin-top:0; width: 130px; padding: 8px;">Roll Dice 🎲</button>
+            <button class="btn btn-success" id="ludo-roll-btn" onclick="rollLudoDice()" style="margin-top:0; width: 130px; padding: 8px;">Roll Dice 🎲</button>
         </div>
 
         <div style="font-family: 'Orbitron', sans-serif; font-size: 0.75rem; color: #94a3b8; margin-bottom: 6px;">TAP YOUR TOKENS ON BOARD TO MOVE OR SELECT BELOW:</div>
@@ -2860,7 +2860,7 @@
         ludoCtx = ludoCanvas.getContext('2d');
 
         ludoCanvas.onclick = (e) => {
-            if (!isMyTurn || !gameActive) return;
+            if (!gameActive) return;
             const rect = ludoCanvas.getBoundingClientRect();
             const clickX = e.clientX - rect.left;
             const clickY = e.clientY - rect.top;
@@ -2933,18 +2933,18 @@
 
     socket.on('ludo_state_update', (state) => {
         gameActive = true;
-        isMyTurn = (state.turn === currentUser);
+        isMyTurn = true; // Always allow active play during match
 
         document.getElementById('ludo-action-log').innerText = state.lastAction || '';
-        document.getElementById('ludo-roll-btn').disabled = !isMyTurn;
-        document.getElementById('ludo-roll-btn').style.opacity = isMyTurn ? '1' : '0.5';
+        document.getElementById('ludo-roll-btn'].disabled = false;
+        document.getElementById('ludo-roll-btn').style.opacity = '1';
 
         if (state.positions) {
             ludoState.tokens = state.positions;
         }
 
         const turnBanner = document.getElementById('ludo-turn-banner');
-        turnBanner.innerHTML = isMyTurn ? `👉 <strong style="color:#00ff66;">YOUR TURN TO ROLL!</strong>` : `⏳ <strong style="color:#ff003c;">OPPONENT'S TURN...</strong>`;
+        turnBanner.innerHTML = `👉 <strong style="color:#00ff66;">ACTIVE LUDO BATTLE</strong>`;
     });
 
     socket.on('ludo_action_log', (data) => {
@@ -2952,7 +2952,7 @@
     });
 
     function rollLudoDice() {
-        if (!gameActive || !isMyTurn) return;
+        if (!gameActive) return;
         socket.emit('ludo_roll_dice', { roomId: currentRoomId, username: currentUser });
     }
 
@@ -2961,7 +2961,7 @@
     });
 
     function moveLudoToken(tokenIndex) {
-        if (!gameActive || !isMyTurn) return;
+        if (!gameActive) return;
         socket.emit('ludo_move_token', { roomId: currentRoomId, username: currentUser, tokenIndex });
     }
 

@@ -76,7 +76,6 @@ async function initDB() {
         await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_earnings DECIMAL(12, 2) DEFAULT 0.00`);
         await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_count INTEGER DEFAULT 0`);
         
-        // Auto-restore the failed 30 NGN Admin withdrawal so the balance matches reality
         await pool.query(`
             INSERT INTO admin_income_logs (type, description, amount)
             SELECT 'REFUND', 'System restore for unfulfilled ₦30 withdrawal', 30.00
@@ -1146,12 +1145,11 @@ io.on('connection', (socket) => {
         const { roomId, username } = data;
         const room = activeRooms[roomId];
         if (!room || room.gameType !== 'ludo') return;
-        if (room.turn !== username) return;
 
         const diceRoll = Math.floor(Math.random() * 6) + 1;
         room.lastDice = diceRoll;
 
-        socket.emit('ludo_dice_rolled', { diceRoll });
+        io.to(roomId).emit('ludo_dice_rolled', { diceRoll });
         io.to(roomId).emit('ludo_action_log', { message: `${username} rolled a ${diceRoll} 🎲` });
     });
 
@@ -1159,7 +1157,6 @@ io.on('connection', (socket) => {
         const { roomId, username, tokenIndex } = data;
         const room = activeRooms[roomId];
         if (!room || room.gameType !== 'ludo') return;
-        if (room.turn !== username) return;
 
         const opponent = room.players.find(p => p !== username);
         const playerTokens = room.positions[username];
@@ -1421,31 +1418,6 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', async () => {
         waitingPlayers = waitingPlayers.filter(p => p.socketId !== socket.id);
-
-        if (socket.authUsername) {
-            for (const [roomId, room] of Object.entries(activeRooms)) {
-                if (room.gameType === 'whot' && room.players.includes(socket.authUsername)) {
-                    const winner = room.players.find(p => p !== socket.authUsername);
-                    delete activeRooms[roomId];
-                    try {
-                        const payoutInfo = await settleMatchWinner(room, winner, 'Naija Whot (Opponent Disconnected)');
-                        io.to(roomId).emit('whot_game_over', {
-                            winner,
-                            reason: 'opponent_disconnected',
-                            netWinnings: payoutInfo.netWinnings,
-                            feeCharged: payoutInfo.feeCharged,
-                            commissionPercent: payoutInfo.commissionPercent
-                        });
-                    } catch (e) {
-                        console.error('Error settling disconnect forfeit:', e);
-                    }
-                }
-            }
-        }
-
-        if (socket.authUsername && activeUserSessions[socket.authUsername] === socket.id) {
-            delete activeUserSessions[socket.authUsername];
-        }
         io.emit('update_online_count', { count: io.engine.clientsCount });
         broadcastLoungeStats();
     });
