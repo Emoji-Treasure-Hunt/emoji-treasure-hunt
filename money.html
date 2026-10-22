@@ -899,7 +899,7 @@
 
     <!-- PRO SNOOKER ACTIVE GAME SCREEN -->
     <div id="snooker-game-screen" class="screen-section">
-        <h1 id="snooker-active-title">🎱 Pro Snooker</h1>
+        <h1 id="snooker-active-title">🎱 Pro Snooker Arena</h1>
         <div class="user-panel">
             <span>⚔️ Rival: <strong id="snooker-opponent-name">Searching...</strong></span>
             <button class="logout-btn" onclick="leaveSnookerGame()">Exit</button>
@@ -907,16 +907,22 @@
 
         <div class="turn-indicator-box" id="snooker-turn-banner">⏳ Searching for Snooker opponent...</div>
         
-        <div style="background: rgba(0,0,0,0.5); padding: 25px; border-radius: 12px; margin-bottom: 15px; border: 1px solid var(--neon-blue);">
-            <div style="font-size: 1.1rem; color: var(--neon-gold); margin-bottom: 15px;" id="snooker-scores-display">Potted Balls: You (0) - Rival (0)</div>
-            <button class="btn btn-success" id="snooker-shot-btn" onclick="takeSnookerShot()" disabled style="opacity: 0.5;">Take Cue Shot 🎱</button>
+        <!-- VISUAL SNOOKER TABLE CANVAS -->
+        <div style="position: relative; width: 100%; display: flex; justify-content: center; margin-bottom: 15px;">
+            <canvas id="snooker-canvas" width="380" height="220" style="background: #0f381e; border: 6px solid #5c2c16; border-radius: 8px; box-shadow: 0 0 25px rgba(0,0,0,0.9); touch-action: none;"></canvas>
         </div>
-        <div id="snooker-action-log" style="font-size: 0.85rem; color: var(--neon-gold);"></div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.5); padding: 10px 15px; border-radius: 8px; margin-bottom: 12px; border: 1px solid var(--neon-blue);">
+            <div id="snooker-scores-display" style="font-family: 'Orbitron', sans-serif; font-size: 0.9rem; color: var(--neon-gold);">Potted: You (0) - Rival (0)</div>
+            <div id="snooker-power-display" style="font-size: 0.85rem; color: #94a3b8;">Power: <span id="power-val" style="color: var(--neon-green);">50%</span></div>
+        </div>
+
+        <div id="snooker-action-log" style="font-size: 0.85rem; color: var(--neon-gold); min-height: 20px;"></div>
     </div>
 
     <!-- NAIJA WHOT ACTIVE GAME SCREEN -->
     <div id="whot-game-screen" class="screen-section">
-        <h1 id="whot-active-title">🃏 Naija Whot 1v1</h1>
+        <h1><span class="app-logo">🃏</span> Naija Whot 1v1</h1>
         <div class="user-panel">
             <span>⚔️ Rival: <strong id="whot-opponent-name">Searching...</strong> (<span id="whot-opponent-cards">0</span> 🃏)</span>
             <button class="logout-btn" onclick="leaveWhotGame()">Exit</button>
@@ -2281,6 +2287,9 @@
         const targetScreen = document.getElementById(screenId);
         if (targetScreen) {
             targetScreen.classList.add('active');
+            if (screenId === 'snooker-game-screen') {
+                setTimeout(initSnookerCanvas, 100);
+            }
         }
     }
 
@@ -2295,6 +2304,7 @@
         document.getElementById('lobby-display-user-2').innerText = username;
         document.getElementById('whot-display-user').innerText = username;
         document.getElementById('ludo-display-user').innerText = username;
+        document.getElementById('snooker-display-user').innerText = username;
         updateLobbyWallet();
 
         const adminMenuItem = document.getElementById('admin-menu-item');
@@ -2969,8 +2979,135 @@
     }
 
     // ==========================================
-    // PRO SNOOKER CLIENT LOGIC
+    // PRO SNOOKER VISUAL CANVAS & CUE ENGINE
     // ==========================================
+    let snookerCanvas, snookerCtx;
+    let cueBall = { x: 100, y: 110, radius: 8, vx: 0, vy: 0 };
+    let objectBalls = [
+        { x: 260, y: 110, radius: 8, color: '#facc15', number: 1, potted: false },
+        { x: 280, y: 95, radius: 8, color: '#ff003c', number: 2, potted: false },
+        { x: 280, y: 125, radius: 8, color: '#00f3ff', number: 3, potted: false },
+        { x: 300, y: 80, radius: 8, color: '#a855f7', number: 4, potted: false },
+        { x: 300, y: 110, radius: 8, color: '#ffffff', number: 8, potted: false },
+        { x: 300, y: 140, radius: 8, color: '#ff7700', number: 6, potted: false }
+    ];
+
+    let isAiming = false;
+    let aimX = 0, aimY = 0;
+    let shotPower = 50;
+
+    function initSnookerCanvas() {
+        snookerCanvas = document.getElementById('snooker-canvas');
+        if (!snookerCanvas) return;
+        snookerCtx = snookerCanvas.getContext('2d');
+
+        snookerCanvas.onpointerdown = (e) => {
+            if (!isMyTurn || !gameActive) return;
+            const rect = snookerCanvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            const dist = Math.hypot(mouseX - cueBall.x, mouseY - cueBall.y);
+            if (dist < 30) {
+                isAiming = true;
+                aimX = mouseX;
+                aimY = mouseY;
+            }
+        };
+
+        snookerCanvas.onpointermove = (e) => {
+            if (!isAiming) return;
+            const rect = snookerCanvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            const pullDist = Math.hypot(mouseX - cueBall.x, mouseY - cueBall.y);
+            shotPower = Math.min(100, Math.max(10, Math.round((pullDist / 100) * 100)));
+            const powerValEl = document.getElementById('power-val');
+            if (powerValEl) powerValEl.innerText = shotPower + '%';
+        };
+
+        snookerCanvas.onpointerup = (e) => {
+            if (!isAiming) return;
+            isAiming = false;
+            playSound('click');
+
+            const rect = snookerCanvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            const angle = Math.atan2(cueBall.y - mouseY, cueBall.x - mouseX);
+            const powerFactor = (shotPower / 100) * 12;
+
+            cueBall.vx = Math.cos(angle) * powerFactor;
+            cueBall.vy = Math.sin(angle) * powerFactor;
+
+            socket.emit('snooker_take_shot', {
+                roomId: currentRoomId,
+                username: currentUser,
+                power: shotPower,
+                angle: Math.round(angle * (180 / Math.PI))
+            });
+        };
+
+        requestAnimationFrame(updateSnookerPhysics);
+    }
+
+    function updateSnookerPhysics() {
+        if (snookerCtx && snookerCanvas) {
+            snookerCtx.clearRect(0, 0, snookerCanvas.width, snookerCanvas.height);
+
+            const pockets = [
+                { x: 15, y: 15 }, { x: 190, y: 10 }, { x: 365, y: 15 },
+                { x: 15, y: 205 }, { x: 190, y: 210 }, { x: 365, y: 205 }
+            ];
+            pockets.forEach(p => {
+                snookerCtx.beginPath();
+                snookerCtx.arc(p.x, p.y, 12, 0, Math.PI * 2);
+                snookerCtx.fillStyle = '#000000';
+                snookerCtx.fill();
+            });
+
+            cueBall.x += cueBall.vx;
+            cueBall.y += cueBall.vy;
+            cueBall.vx *= 0.97;
+            cueBall.vy *= 0.97;
+
+            if (cueBall.x < 22 || cueBall.x > 358) { cueBall.vx *= -1; }
+            if (cueBall.y < 22 || cueBall.y > 198) { cueBall.vy *= -1; }
+
+            snookerCtx.beginPath();
+            snookerCtx.arc(cueBall.x, cueBall.y, cueBall.radius, 0, Math.PI * 2);
+            snookerCtx.fillStyle = '#ffffff';
+            snookerCtx.fill();
+            snookerCtx.lineWidth = 1;
+            snookerCtx.strokeStyle = '#cbd5e1';
+            snookerCtx.stroke();
+
+            if (isAiming && isMyTurn) {
+                snookerCtx.beginPath();
+                snookerCtx.moveTo(cueBall.x, cueBall.y);
+                snookerCtx.lineTo(cueBall.x + (cueBall.x - aimX) * 1.5, cueBall.y + (cueBall.y - aimY) * 1.5);
+                snookerCtx.strokeStyle = 'rgba(250, 204, 21, 0.7)';
+                snookerCtx.lineWidth = 2;
+                snookerCtx.setLineDash([4, 4]);
+                snookerCtx.stroke();
+                snookerCtx.setLineDash([]);
+            }
+
+            objectBalls.forEach(ball => {
+                if (ball.potted) return;
+                snookerCtx.beginPath();
+                snookerCtx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+                snookerCtx.fillStyle = ball.color;
+                snookerCtx.fill();
+                snookerCtx.strokeStyle = '#000';
+                snookerCtx.stroke();
+            });
+        }
+        requestAnimationFrame(updateSnookerPhysics);
+    }
+
     function joinSnookerQueue(stakeAmount, roomTitle) {
         playSound('click');
         const username = localStorage.getItem('emoji_current_user_secure');
@@ -2986,6 +3123,7 @@
         switchScreen('snooker-game-screen');
         document.getElementById('snooker-active-title').innerText = `${roomTitle} (₦${stakeAmount.toLocaleString()})`;
         document.getElementById('snooker-turn-banner').innerText = '⏳ Waiting for Snooker opponent...';
+        document.getElementById('snooker-opponent-name').innerText = 'Searching...';
 
         socket.emit('join_queue', {
             username,
@@ -2999,29 +3137,17 @@
         isMyTurn = (state.turn === currentUser);
 
         document.getElementById('snooker-action-log').innerText = state.lastAction || '';
-        document.getElementById('snooker-shot-btn').disabled = !isMyTurn;
-        document.getElementById('snooker-shot-btn').style.opacity = isMyTurn ? '1' : '0.5';
-
+        
         const myScore = state.scores[currentUser] || 0;
-        const opponentName = document.getElementById('snooker-opponent-name').innerText;
+        const opponentName = roomPlayers.find(p => p !== currentUser) || 'Rival';
+        document.getElementById('snooker-opponent-name').innerText = opponentName;
         const oppScore = state.scores[opponentName] || 0;
         document.getElementById('snooker-scores-display').innerText = `Potted Balls: You (${myScore}) - Rival (${oppScore})`;
 
         const turnBanner = document.getElementById('snooker-turn-banner');
-        turnBanner.innerHTML = isMyTurn ? `👉 <strong style="color:#00ff66;">YOUR SHOT!</strong>` : `⏳ <strong style="color:#ff003c;">OPPONENT'S SHOT...</strong>`;
+        turnBanner.innerHTML = isMyTurn ? `👉 <strong style="color:#00ff66;">YOUR SHOT! DRAG CUE BALL TO AIM & SHOOT</strong>` : `⏳ <strong style="color:#ff003c;">OPPONENT'S SHOT...</strong>`;
         if (isMyTurn) playSound('beep');
     });
-
-    function takeSnookerShot() {
-        if (!gameActive || !isMyTurn) return;
-        playSound('click');
-        socket.emit('snooker_take_shot', {
-            roomId: currentRoomId,
-            username: currentUser,
-            power: Math.floor(Math.random() * 50) + 50,
-            angle: 45
-        });
-    }
 
     socket.on('snooker_game_over', (data) => {
         gameActive = false;
