@@ -882,12 +882,12 @@ io.on('connection', (socket) => {
                         players: [player1.username, player2.username],
                         stake: numericStake,
                         positions: {
-                            [player1.username]: [0, 0],
-                            [player2.username]: [0, 0]
+                            [player1.username]: [-1, -1, -1, -1],
+                            [player2.username]: [-1, -1, -1, -1]
                         },
                         turn: player1.username,
                         lastDice: null,
-                        lastAction: 'Ludo match started! Roll the dice.'
+                        lastAction: 'Naija Ludo match started! Roll a 6 to bring out a token.'
                     };
 
                     io.to(roomId).emit('ludo_state_update', {
@@ -1140,7 +1140,7 @@ io.on('connection', (socket) => {
     });
 
     // ==========================================
-    // LUDO BLITZ GAME ENGINE
+    // NAIJA LUDO BLITZ GAME ENGINE
     // ==========================================
     socket.on('ludo_roll_dice', (data) => {
         const { roomId, username } = data;
@@ -1163,17 +1163,30 @@ io.on('connection', (socket) => {
 
         const opponent = room.players.find(p => p !== username);
         const playerTokens = room.positions[username];
-        const dice = room.lastDice || 1;
+        const dice = room.lastDice;
 
-        playerTokens[tokenIndex] += dice;
-        if (playerTokens[tokenIndex] > 33) {
-            playerTokens[tokenIndex] = 33;
+        if (dice === null) return;
+
+        if (playerTokens[tokenIndex] === -1) {
+            if (dice === 6) {
+                playerTokens[tokenIndex] = 0;
+                room.lastAction = `${username} rolled a 6 and brought out a token! 🎉`;
+            } else {
+                socket.emit('ludo_action_log', { message: '❌ You need a 6 to bring a token out of base!' });
+                return;
+            }
+        } else {
+            playerTokens[tokenIndex] += dice;
+            if (playerTokens[tokenIndex] > 57) {
+                playerTokens[tokenIndex] = 57;
+            }
+            room.lastAction = `${username} moved token #${tokenIndex + 1} by ${dice} steps.`;
         }
 
-        if (playerTokens.every(pos => pos === 33)) {
+        if (playerTokens.every(pos => pos === 57)) {
             delete activeRooms[roomId];
             try {
-                const payoutInfo = await settleMatchWinner(room, username, 'Ludo Blitz');
+                const payoutInfo = await settleMatchWinner(room, username, 'Naija Ludo');
                 io.to(roomId).emit('ludo_game_over', {
                     winner: username,
                     netWinnings: payoutInfo.netWinnings,
@@ -1188,13 +1201,19 @@ io.on('connection', (socket) => {
             return;
         }
 
-        room.turn = opponent;
+        if (dice === 6) {
+            room.turn = username;
+            room.lastAction += ` Rolled a 6! Extra turn granted! 🎲`;
+        } else {
+            room.turn = opponent;
+        }
+
         room.lastDice = null;
 
         io.to(roomId).emit('ludo_state_update', {
             positions: room.positions,
             turn: room.turn,
-            lastAction: `${username} moved token #${tokenIndex + 1}. Now ${opponent}'s turn!`
+            lastAction: room.lastAction
         });
     });
 
