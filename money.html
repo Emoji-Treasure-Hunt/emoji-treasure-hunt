@@ -2843,7 +2843,9 @@
             player1: [-1, -1, -1, -1],
             player2: [-1, -1, -1, -1]
         },
-        colors: { player1: '#00ff66', player2: '#ff003c' }
+        colors: { player1: '#00ff66', player2: '#ff003c' },
+        currentDice: [null, null],
+        myRole: null
     };
 
     function joinLudoQueue(stakeAmount, roomTitle) {
@@ -2886,8 +2888,8 @@
 
             let myTokens = ludoState.tokens[currentUser] || [-1, -1, -1, -1];
             myTokens.forEach((pos, idx) => {
-                let coords = getLudoTokenPixelCoords(pos, idx, 0);
-                if (Math.hypot(clickX - coords.x, clickY - coords.y) < 16) {
+                let coords = getLudoTokenPixelCoords(pos, idx, ludoState.myRole);
+                if (Math.hypot(clickX - coords.x, clickY - coords.y) < 18) {
                     moveLudoToken(idx);
                 }
             });
@@ -2896,17 +2898,51 @@
         requestAnimationFrame(drawLudoCanvas);
     }
 
-    function getLudoTokenPixelCoords(pos, tokenIdx, playerRole) {
+    function getLudoTokenPixelCoords(pos, tokenIdx, role) {
         if (pos === -1) {
-            let baseCoords = [
-                [{x:235,y:45}, {x:275,y:45}, {x:235,y:85}, {x:275,y:85}],
-                [{x:45,y:45}, {x:85,y:45}, {x:45,y:85}, {x:85,y:85}]
-            ];
-            return baseCoords[playerRole][tokenIdx] || {x: 60, y: 60};
+            let baseCoords = {
+                player1: [{x:235,y:45}, {x:275,y:45}, {x:235,y:85}, {x:275,y:85}],
+                player2: [{x:45,y:45}, {x:85,y:45}, {x:45,y:85}, {x:85,y:85}]
+            };
+            let roleKey = role || 'player1';
+            return (baseCoords[roleKey] || baseCoords.player1)[tokenIdx] || {x: 60, y: 60};
         }
         let trackX = 145 + ((pos * 3) % 150);
         let trackY = 170 + (tokenIdx * 6);
         return { x: trackX, y: trackY };
+    }
+
+    function drawDiceFace(ctx, x, y, size, num) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(x, y, size, size);
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, size, size);
+
+        if (!num) return;
+
+        ctx.fillStyle = '#000000';
+        const dotSize = size * 0.15;
+        const cx = x + size / 2;
+        const cy = y + size / 2;
+        const l = x + size * 0.25;
+        const r = x + size * 0.75;
+        const t = y + size * 0.25;
+        const b = y + size * 0.75;
+
+        let dots = [];
+        if (num === 1) dots = [[cx, cy]];
+        else if (num === 2) dots = [[l, t], [r, b]];
+        else if (num === 3) dots = [[l, t], [cx, cy], [r, b]];
+        else if (num === 4) dots = [[l, t], [r, t], [l, b], [r, b]];
+        else if (num === 5) dots = [[l, t], [r, t], [cx, cy], [l, b], [r, b]];
+        else if (num === 6) dots = [[l, t], [r, t], [l, cy], [r, cy], [l, b], [r, b]];
+
+        dots.forEach(d => {
+            ctx.beginPath();
+            ctx.arc(d[0], d[1], dotSize, 0, Math.PI * 2);
+            ctx.fill();
+        });
     }
 
     function drawLudoCanvas() {
@@ -2950,11 +2986,20 @@
             }
         }
 
+        ludoCtx.beginPath(); ludoCtx.moveTo(170, 170); ludoCtx.lineTo(136, 136); ludoCtx.lineTo(204, 136); ludoCtx.fillStyle = '#b91c1c'; ludoCtx.fill(); ludoCtx.stroke();
+        ludoCtx.beginPath(); ludoCtx.moveTo(170, 170); ludoCtx.lineTo(204, 136); ludoCtx.lineTo(204, 204); ludoCtx.fillStyle = '#15803d'; ludoCtx.fill(); ludoCtx.stroke();
+        ludoCtx.beginPath(); ludoCtx.moveTo(170, 170); ludoCtx.lineTo(204, 204); ludoCtx.lineTo(136, 204); ludoCtx.fillStyle = '#ca8a04'; ludoCtx.fill(); ludoCtx.stroke();
+        ludoCtx.beginPath(); ludoCtx.moveTo(170, 170); ludoCtx.lineTo(136, 204); ludoCtx.lineTo(136, 136); ludoCtx.fillStyle = '#1d4ed8'; ludoCtx.fill(); ludoCtx.stroke();
+
+        // Draw physical two dice faces right in the center vault
+        drawDiceFace(ludoCtx, 150, 152, 16, ludoState.currentDice[0]);
+        drawDiceFace(ludoCtx, 174, 152, 16, ludoState.currentDice[1]);
+
         let pKeys = Object.keys(ludoState.tokens);
-        pKeys.forEach((pKey, pIdx) => {
+        pKeys.forEach((pKey) => {
             let tokens = ludoState.tokens[pKey];
             tokens.forEach((pos, idx) => {
-                let coords = getLudoTokenPixelCoords(pos, idx, pIdx);
+                let coords = getLudoTokenPixelCoords(pos, idx, pKey);
                 ludoCtx.beginPath();
                 ludoCtx.arc(coords.x, coords.y, 10, 0, Math.PI * 2);
                 ludoCtx.fillStyle = ludoState.colors[pKey] || '#ffffff';
@@ -2983,6 +3028,10 @@
             ludoState.tokens = state.positions;
         }
 
+        if (state.players) {
+            ludoState.myRole = (state.players[0] === currentUser) ? 'player1' : 'player2';
+        }
+
         const turnBanner = document.getElementById('ludo-turn-banner');
         turnBanner.innerHTML = `👉 <strong style="color:#00ff66;">NAIJA 2-DICE LUDO BATTLE</strong>`;
     });
@@ -2997,6 +3046,7 @@
     }
 
     socket.on('ludo_dice_rolled', (data) => {
+        ludoState.currentDice = [data.dice1, data.dice2];
         const diceBox = document.getElementById('ludo-dice-box');
         if (diceBox) {
             diceBox.innerText = `🎲 Dice: [${data.dice1}, ${data.dice2}]`;
