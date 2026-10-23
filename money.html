@@ -2835,7 +2835,7 @@
     }
 
     // ==========================================
-    // AUTHENTIC NAIJA LUDO 2D BOARD ENGINE
+    // AUTHENTIC NAIJA LUDO GRID BOARD & DICE ENGINE
     // ==========================================
     let ludoCanvas, ludoCtx;
     let ludoState = {
@@ -2881,8 +2881,8 @@
 
             let myTokens = ludoState.tokens[currentUser] || [-1, -1, -1, -1];
             myTokens.forEach((pos, idx) => {
-                let coords = getTokenPixelCoords(pos, idx, 0);
-                if (Math.hypot(clickX - coords.x, clickY - coords.y) < 18) {
+                let coords = getLudoTokenPixelCoords(pos, idx, 0);
+                if (Math.hypot(clickX - coords.x, clickY - coords.y) < 16) {
                     moveLudoToken(idx);
                 }
             });
@@ -2891,16 +2891,16 @@
         requestAnimationFrame(drawLudoCanvas);
     }
 
-    function getTokenPixelCoords(pos, tokenIdx, playerRole) {
+    function getLudoTokenPixelCoords(pos, tokenIdx, playerRole) {
         if (pos === -1) {
             let baseCoords = [
-                [{x:45,y:45}, {x:91,y:45}, {x:45,y:91}, {x:91,y:91}],
-                [{x:45,y:249}, {x:91,y:249}, {x:45,y:295}, {x:91,y:295}]
+                [{x:50,y:50}, {x:90,y:50}, {x:50,y:90}, {x:90,y:90}],
+                [{x:50,y:250}, {x:90,y:250}, {x:50,y:290}, {x:90,y:290}]
             ];
             return baseCoords[playerRole][tokenIdx] || {x: 60, y: 60};
         }
-        let trackX = 30 + (pos * 5) % 280;
-        let trackY = 170 + (tokenIdx * 8);
+        let trackX = 145 + ((pos * 3) % 150);
+        let trackY = 170 + (tokenIdx * 6);
         return { x: trackX, y: trackY };
     }
 
@@ -2909,35 +2909,63 @@
         ludoCtx.clearRect(0, 0, ludoCanvas.width, ludoCanvas.height);
 
         const sz = 136;
-        ludoCtx.fillStyle = '#15803d'; ludoCtx.fillRect(0, 0, sz, sz);
-        ludoCtx.fillStyle = '#ca8a04'; ludoCtx.fillRect(204, 0, sz, sz);
-        ludoCtx.fillStyle = '#b91c1c'; ludoCtx.fillRect(0, 204, sz, sz);
-        ludoCtx.fillStyle = '#1d4ed8'; ludoCtx.fillRect(204, 204, sz, sz);
+        const cellSize = 22.66;
+
+        ludoCtx.fillStyle = '#b91c1c'; ludoCtx.fillRect(0, 0, sz, sz);
+        ludoCtx.fillStyle = '#15803d'; ludoCtx.fillRect(204, 0, sz, sz);
+        ludoCtx.fillStyle = '#1d4ed8'; ludoCtx.fillRect(0, 204, sz, sz);
+        ludoCtx.fillStyle = '#ca8a04'; ludoCtx.fillRect(204, 204, sz, sz);
 
         ludoCtx.fillStyle = '#ffffff';
-        [ {x:45,y:45}, {x:91,y:45}, {x:45,y:91}, {x:91,y:91},
-          {x:249,y:45}, {x:295,y:45}, {x:249,y:91}, {x:295,y:91},
-          {x:45,y:249}, {x:91,y:249}, {x:45,y:295}, {x:91,y:295},
-          {x:249,y:249}, {x:295,y:249}, {x:249,y:295}, {x:295,y:295} ].forEach(c => {
+        [
+            {x:25,y:25}, {x:85,y:25}, {x:25,y:85}, {x:85,y:85},
+            {x:229,y:25}, {x:289,y:25}, {x:229,y:85}, {x:289,y:85},
+            {x:25,y:229}, {x:85,y:229}, {x:25,y:289}, {x:85,y:289},
+            {x:229,y:229}, {x:289,y:229}, {x:229,y:289}, {x:289,y:289}
+        ].forEach(c => {
             ludoCtx.beginPath(); ludoCtx.arc(c.x, c.y, 14, 0, Math.PI*2); ludoCtx.fill();
+            ludoCtx.strokeStyle = '#cbd5e1'; ludoCtx.lineWidth = 1; ludoCtx.stroke();
         });
 
-        ludoCtx.fillStyle = '#0f172a';
-        ludoCtx.fillRect(136, 136, 68, 68);
-        ludoCtx.strokeStyle = '#facc15'; ludoCtx.lineWidth = 2;
-        ludoCtx.strokeRect(136, 136, 68, 68);
+        ludoCtx.strokeStyle = '#000000';
+        ludoCtx.lineWidth = 1.5;
+
+        ludoCtx.fillStyle = '#ffffff';
+        ludoCtx.fillRect(136, 0, 68, 136);
+        ludoCtx.fillRect(0, 136, 136, 68);
+        ludoCtx.fillRect(136, 204, 68, 136);
+        ludoCtx.fillRect(204, 136, 136, 68);
+
+        for (let i = 0; i < 6; i++) {
+            for (let j = 0; j < 3; j++) {
+                ludoCtx.strokeRect(136 + (j * cellSize), i * cellSize, cellSize, cellSize);
+                ludoCtx.strokeRect(136 + (j * cellSize), 204 + (i * cellSize), cellSize, cellSize);
+                ludoCtx.strokeRect(i * cellSize, 136 + (j * cellSize), cellSize, cellSize);
+                ludoCtx.strokeRect(204 + (i * cellSize), 136 + (j * cellSize), cellSize, cellSize);
+            }
+        }
+
+        ludoCtx.fillStyle = '#b91c1c'; ludoCtx.fillRect(136.5, 22.6, cellSize, cellSize);
+        ludoCtx.fillStyle = '#15803d'; ludoCtx.fillRect(280, 136.5, cellSize, cellSize);
+        ludoCtx.fillStyle = '#1d4ed8'; ludoCtx.fillRect(158.6, 280, cellSize, cellSize);
+        ludoCtx.fillStyle = '#ca8a04'; ludoCtx.fillRect(22.6, 158.6, cellSize, cellSize);
+
+        ludoCtx.beginPath(); ludoCtx.moveTo(170, 170); ludoCtx.lineTo(136, 136); ludoCtx.lineTo(204, 136); ludoCtx.fillStyle = '#b91c1c'; ludoCtx.fill(); ludoCtx.stroke();
+        ludoCtx.beginPath(); ludoCtx.moveTo(170, 170); ludoCtx.lineTo(204, 136); ludoCtx.lineTo(204, 204); ludoCtx.fillStyle = '#15803d'; ludoCtx.fill(); ludoCtx.stroke();
+        ludoCtx.beginPath(); ludoCtx.moveTo(170, 170); ludoCtx.lineTo(204, 204); ludoCtx.lineTo(136, 204); ludoCtx.fillStyle = '#ca8a04'; ludoCtx.fill(); ludoCtx.stroke();
+        ludoCtx.beginPath(); ludoCtx.moveTo(170, 170); ludoCtx.lineTo(136, 204); ludoCtx.lineTo(136, 136); ludoCtx.fillStyle = '#1d4ed8'; ludoCtx.fill(); ludoCtx.stroke();
 
         let pKeys = Object.keys(ludoState.tokens);
         pKeys.forEach((pKey, pIdx) => {
             let tokens = ludoState.tokens[pKey];
             tokens.forEach((pos, idx) => {
-                let coords = getTokenPixelCoords(pos, idx, pIdx);
+                let coords = getLudoTokenPixelCoords(pos, idx, pIdx);
                 ludoCtx.beginPath();
                 ludoCtx.arc(coords.x, coords.y, 11, 0, Math.PI * 2);
                 ludoCtx.fillStyle = ludoState.colors[pKey] || '#ffffff';
                 ludoCtx.fill();
                 ludoCtx.lineWidth = 2;
-                ludoCtx.strokeStyle = '#ffffff';
+                ludoCtx.strokeStyle = '#000000';
                 ludoCtx.stroke();
             });
         });
@@ -2958,7 +2986,7 @@
         }
 
         const turnBanner = document.getElementById('ludo-turn-banner');
-        turnBanner.innerHTML = `👉 <strong style="color:#00ff66;">ACTIVE LUDO BATTLE</strong>`;
+        turnBanner.innerHTML = `👉 <strong style="color:#00ff66;">NAIJA LUDO ACTIVE BATTLE</strong>`;
     });
 
     socket.on('ludo_action_log', (data) => {
