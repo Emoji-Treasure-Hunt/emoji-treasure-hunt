@@ -891,8 +891,8 @@
         </div>
 
         <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.5); padding: 10px 15px; border-radius: 8px; margin-bottom: 12px; border: 1px solid var(--neon-gold);">
-            <div id="ludo-dice-box" style="font-family: 'Orbitron', sans-serif; font-size: 1.2rem; color: var(--neon-gold);">🎲 Dice: -</div>
-            <button class="btn btn-success" id="ludo-roll-btn" onclick="rollLudoDice()" style="margin-top:0; width: 130px; padding: 8px;">Roll Dice 🎲</button>
+            <div id="ludo-dice-box" style="font-family: 'Orbitron', sans-serif; font-size: 1.1rem; color: var(--neon-gold);">🎲 Dice: [- , -]</div>
+            <button class="btn btn-success" id="ludo-roll-btn" onclick="rollLudoDice()" style="margin-top:0; width: 140px; padding: 8px;">Roll Two Dice 🎲🎲</button>
         </div>
 
         <div style="font-family: 'Orbitron', sans-serif; font-size: 0.75rem; color: #94a3b8; margin-bottom: 6px;">TAP YOUR TOKENS ON BOARD TO MOVE OR SELECT BELOW:</div>
@@ -2835,7 +2835,7 @@
     }
 
     // ==========================================
-    // AUTHENTIC NAIJA LUDO GRID BOARD & DICE ENGINE
+    // AUTHENTIC NAIJA LUDO GRID BOARD & 2-DICE ENGINE
     // ==========================================
     let ludoCanvas, ludoCtx;
     let ludoState = {
@@ -2873,6 +2873,11 @@
         if (!ludoCanvas) return;
         ludoCtx = ludoCanvas.getContext('2d');
 
+        const rollBtn = document.getElementById('ludo-roll-btn');
+        if (rollBtn) {
+            rollBtn.onclick = function() { rollLudoDice(); };
+        }
+
         ludoCanvas.onclick = (e) => {
             if (!gameActive) return;
             const rect = ludoCanvas.getBoundingClientRect();
@@ -2894,8 +2899,8 @@
     function getLudoTokenPixelCoords(pos, tokenIdx, playerRole) {
         if (pos === -1) {
             let baseCoords = [
-                [{x:50,y:50}, {x:90,y:50}, {x:50,y:90}, {x:90,y:90}],
-                [{x:50,y:250}, {x:90,y:250}, {x:50,y:290}, {x:90,y:290}]
+                [{x:235,y:45}, {x:275,y:45}, {x:235,y:85}, {x:275,y:85}],
+                [{x:45,y:45}, {x:85,y:45}, {x:45,y:85}, {x:85,y:85}]
             ];
             return baseCoords[playerRole][tokenIdx] || {x: 60, y: 60};
         }
@@ -2918,12 +2923,12 @@
 
         ludoCtx.fillStyle = '#ffffff';
         [
-            {x:25,y:25}, {x:85,y:25}, {x:25,y:85}, {x:85,y:85},
-            {x:229,y:25}, {x:289,y:25}, {x:229,y:85}, {x:289,y:85},
-            {x:25,y:229}, {x:85,y:229}, {x:25,y:289}, {x:85,y:289},
-            {x:229,y:229}, {x:289,y:229}, {x:229,y:289}, {x:289,y:289}
+            {x:45,y:45}, {x:85,y:45}, {x:45,y:85}, {x:85,y:85},
+            {x:235,y:45}, {x:275,y:45}, {x:235,y:85}, {x:275,y:85},
+            {x:45,y:235}, {x:85,y:235}, {x:45,y:275}, {x:85,y:275},
+            {x:235,y:235}, {x:275,y:235}, {x:235,y:275}, {x:275,y:275}
         ].forEach(c => {
-            ludoCtx.beginPath(); ludoCtx.arc(c.x, c.y, 14, 0, Math.PI*2); ludoCtx.fill();
+            ludoCtx.beginPath(); ludoCtx.arc(c.x, c.y, 13, 0, Math.PI*2); ludoCtx.fill();
             ludoCtx.strokeStyle = '#cbd5e1'; ludoCtx.lineWidth = 1; ludoCtx.stroke();
         });
 
@@ -2945,23 +2950,13 @@
             }
         }
 
-        ludoCtx.fillStyle = '#b91c1c'; ludoCtx.fillRect(136.5, 22.6, cellSize, cellSize);
-        ludoCtx.fillStyle = '#15803d'; ludoCtx.fillRect(280, 136.5, cellSize, cellSize);
-        ludoCtx.fillStyle = '#1d4ed8'; ludoCtx.fillRect(158.6, 280, cellSize, cellSize);
-        ludoCtx.fillStyle = '#ca8a04'; ludoCtx.fillRect(22.6, 158.6, cellSize, cellSize);
-
-        ludoCtx.beginPath(); ludoCtx.moveTo(170, 170); ludoCtx.lineTo(136, 136); ludoCtx.lineTo(204, 136); ludoCtx.fillStyle = '#b91c1c'; ludoCtx.fill(); ludoCtx.stroke();
-        ludoCtx.beginPath(); ludoCtx.moveTo(170, 170); ludoCtx.lineTo(204, 136); ludoCtx.lineTo(204, 204); ludoCtx.fillStyle = '#15803d'; ludoCtx.fill(); ludoCtx.stroke();
-        ludoCtx.beginPath(); ludoCtx.moveTo(170, 170); ludoCtx.lineTo(204, 204); ludoCtx.lineTo(136, 204); ludoCtx.fillStyle = '#ca8a04'; ludoCtx.fill(); ludoCtx.stroke();
-        ludoCtx.beginPath(); ludoCtx.moveTo(170, 170); ludoCtx.lineTo(136, 204); ludoCtx.lineTo(136, 136); ludoCtx.fillStyle = '#1d4ed8'; ludoCtx.fill(); ludoCtx.stroke();
-
         let pKeys = Object.keys(ludoState.tokens);
         pKeys.forEach((pKey, pIdx) => {
             let tokens = ludoState.tokens[pKey];
             tokens.forEach((pos, idx) => {
                 let coords = getLudoTokenPixelCoords(pos, idx, pIdx);
                 ludoCtx.beginPath();
-                ludoCtx.arc(coords.x, coords.y, 11, 0, Math.PI * 2);
+                ludoCtx.arc(coords.x, coords.y, 10, 0, Math.PI * 2);
                 ludoCtx.fillStyle = ludoState.colors[pKey] || '#ffffff';
                 ludoCtx.fill();
                 ludoCtx.lineWidth = 2;
@@ -2978,15 +2973,18 @@
         isMyTurn = true;
 
         document.getElementById('ludo-action-log').innerText = state.lastAction || '';
-        document.getElementById('ludo-roll-btn').disabled = false;
-        document.getElementById('ludo-roll-btn').style.opacity = '1';
+        const rollBtn = document.getElementById('ludo-roll-btn');
+        if (rollBtn) {
+            rollBtn.disabled = false;
+            rollBtn.style.opacity = '1';
+        }
 
         if (state.positions) {
             ludoState.tokens = state.positions;
         }
 
         const turnBanner = document.getElementById('ludo-turn-banner');
-        turnBanner.innerHTML = `👉 <strong style="color:#00ff66;">NAIJA LUDO ACTIVE BATTLE</strong>`;
+        turnBanner.innerHTML = `👉 <strong style="color:#00ff66;">NAIJA 2-DICE LUDO BATTLE</strong>`;
     });
 
     socket.on('ludo_action_log', (data) => {
@@ -2995,11 +2993,14 @@
 
     function rollLudoDice() {
         if (!gameActive) return;
-        socket.emit('ludo_roll_dice', { roomId: currentRoomId, username: currentUser });
+        socket.emit('ludo_roll_two_dice', { roomId: currentRoomId, username: currentUser });
     }
 
     socket.on('ludo_dice_rolled', (data) => {
-        document.getElementById('ludo-dice-box').innerText = `🎲 Dice: ${data.diceRoll}`;
+        const diceBox = document.getElementById('ludo-dice-box');
+        if (diceBox) {
+            diceBox.innerText = `🎲 Dice: [${data.dice1}, ${data.dice2}]`;
+        }
     });
 
     function moveLudoToken(tokenIndex) {
@@ -3031,7 +3032,7 @@
     }
 
     // ==========================================
-    // COMPLETE 8-BALL SNOOKER PHYSICS & CUE ENGINE
+    // PRO SNOOKER ENGINE
     // ==========================================
     let snookerCanvas, snookerCtx;
     let cueBall = { x: 100, y: 110, radius: 8, vx: 0, vy: 0, active: true };
