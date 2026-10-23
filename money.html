@@ -2101,9 +2101,17 @@
     }
 
     function handleAuth() {
-        const username = document.getElementById('username-input').value.trim();
-        const password = document.getElementById('password-input').value.trim();
+        const usernameInput = document.getElementById('username-input');
+        const passwordInput = document.getElementById('password-input');
         const msgEl = document.getElementById('auth-msg');
+        
+        if (!usernameInput || !passwordInput || !msgEl) {
+            console.error("Auth form elements missing from DOM.");
+            return;
+        }
+
+        const username = usernameInput.value.trim();
+        const password = passwordInput.value.trim();
         msgEl.className = "error-msg";
 
         if (!username || !password) {
@@ -2164,6 +2172,12 @@
 
         } else {
             msgEl.innerText = "Logging in...";
+            
+            if (!socket.connected) {
+                msgEl.innerText = "❌ Not connected to server. Please refresh the page.";
+                return;
+            }
+
             socket.emit('login_user', { username, password }, (response) => {
                 if (response && response.success) {
                     let users = JSON.parse(localStorage.getItem('emoji_users_secure') || '{}');
@@ -2933,10 +2947,10 @@
 
     socket.on('ludo_state_update', (state) => {
         gameActive = true;
-        isMyTurn = true; // Always allow active play during match
+        isMyTurn = true;
 
         document.getElementById('ludo-action-log').innerText = state.lastAction || '';
-        document.getElementById('ludo-roll-btn'].disabled = false;
+        document.getElementById('ludo-roll-btn').disabled = false;
         document.getElementById('ludo-roll-btn').style.opacity = '1';
 
         if (state.positions) {
