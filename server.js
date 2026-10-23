@@ -683,6 +683,10 @@ io.on('connection', (socket) => {
                             [player1.username]: [-1, -1, -1, -1],
                             [player2.username]: [-1, -1, -1, -1]
                         },
+                        roles: {
+                            [player1.username]: 'player1', // Green
+                            [player2.username]: 'player2'  // Red
+                        },
                         turn: player1.username,
                         lastDice1: null,
                         lastDice2: null,
@@ -690,6 +694,9 @@ io.on('connection', (socket) => {
                     };
 
                     io.to(roomId).emit('ludo_state_update', {
+                        roomId,
+                        players: [player1.username, player2.username],
+                        roles: activeRooms[roomId].roles,
                         positions: activeRooms[roomId].positions,
                         turn: activeRooms[roomId].turn,
                         lastAction: activeRooms[roomId].lastAction

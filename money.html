@@ -2904,7 +2904,7 @@
                 player1: [{x:235,y:45}, {x:275,y:45}, {x:235,y:85}, {x:275,y:85}],
                 player2: [{x:45,y:45}, {x:85,y:45}, {x:45,y:85}, {x:85,y:85}]
             };
-            let roleKey = role || 'player1';
+            let roleKey = role || ludoState.myRole || 'player1';
             return (baseCoords[roleKey] || baseCoords.player1)[tokenIdx] || {x: 60, y: 60};
         }
         let trackX = 145 + ((pos * 3) % 150);
@@ -3015,25 +3015,33 @@
 
     socket.on('ludo_state_update', (state) => {
         gameActive = true;
-        isMyTurn = true;
+        isMyTurn = (state.turn === currentUser);
 
         document.getElementById('ludo-action-log').innerText = state.lastAction || '';
         const rollBtn = document.getElementById('ludo-roll-btn');
         if (rollBtn) {
-            rollBtn.disabled = false;
-            rollBtn.style.opacity = '1';
+            rollBtn.disabled = !isMyTurn;
+            rollBtn.style.opacity = isMyTurn ? '1' : '0.5';
         }
 
         if (state.positions) {
             ludoState.tokens = state.positions;
         }
 
-        if (state.players) {
+        if (state.roles && state.roles[currentUser]) {
+            ludoState.myRole = state.roles[currentUser];
+        } else if (state.players) {
             ludoState.myRole = (state.players[0] === currentUser) ? 'player1' : 'player2';
         }
 
         const turnBanner = document.getElementById('ludo-turn-banner');
-        turnBanner.innerHTML = `👉 <strong style="color:#00ff66;">NAIJA 2-DICE LUDO BATTLE</strong>`;
+        if (isMyTurn) {
+            turnBanner.innerHTML = `👉 <strong style="color:#00ff66;">YOUR TURN! ROLL THE DICE</strong>`;
+            turnBanner.style.borderColor = '#00ff66';
+        } else {
+            turnBanner.innerHTML = `⏳ <strong style="color:#ff003c;">OPPONENT'S TURN...</strong>`;
+            turnBanner.style.borderColor = '#ff003c';
+        }
     });
 
     socket.on('ludo_action_log', (data) => {
@@ -3041,7 +3049,7 @@
     });
 
     function rollLudoDice() {
-        if (!gameActive) return;
+        if (!gameActive || !isMyTurn) return;
         socket.emit('ludo_roll_two_dice', { roomId: currentRoomId, username: currentUser });
     }
 
@@ -3054,7 +3062,7 @@
     });
 
     function moveLudoToken(tokenIndex) {
-        if (!gameActive) return;
+        if (!gameActive || !isMyTurn) return;
         socket.emit('ludo_move_token', { roomId: currentRoomId, username: currentUser, tokenIndex });
     }
 
