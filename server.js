@@ -889,7 +889,7 @@ io.on('connection', (socket) => {
         if (tokens[tokenIndex] === -1) {
             if (d1 === 6 || d2 === 6 || totalMove === 6) {
                 tokens[tokenIndex] = 0;
-                room.lastAction = `${username} brought out a token with a 6! 🎉`;
+                room.lastAction = `🚀 ${username} brought Token #${tokenIndex + 1} OUT of the family base! 🎉`;
             } else {
                 socket.emit('ludo_action_log', { message: '❌ You need a 6 on either die to come out!' });
                 return;

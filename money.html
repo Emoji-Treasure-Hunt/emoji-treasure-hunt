@@ -902,7 +902,7 @@
             <button class="group-btn" style="font-size: 0.75rem; padding: 6px;" onclick="moveLudoToken(2)">Token 3</button>
             <button class="group-btn" style="font-size: 0.75rem; padding: 6px;" onclick="moveLudoToken(3)">Token 4</button>
         </div>
-        <div id="ludo-action-log" style="font-size: 0.85rem; color: var(--neon-gold); min-height: 25px;"></div>
+        <div id="ludo-action-log" style="font-size: 0.9rem; font-family: 'Orbitron', sans-serif; color: var(--neon-green); min-height: 30px; font-weight: bold; text-shadow: 0 0 8px rgba(0,255,102,0.4);"></div>
     </div>
 
     <!-- PRO SNOOKER ACTIVE GAME SCREEN -->
@@ -2900,13 +2900,15 @@
     }
 
     function getLudoTokenPixelCoords(pos, tokenIdx, role) {
+        let baseCoords = {
+            player1: [{x:235,y:45}, {x:275,y:45}, {x:235,y:85}, {x:275,y:85}], // Green Yard (Player 1)
+            player2: [{x:45,y:45}, {x:85,y:45}, {x:45,y:85}, {x:85,y:85}]    // Red Yard (Player 2)
+        };
+        let roleKey = role || ludoState.myRole || 'player1';
+        let yardSpots = baseCoords[roleKey] || baseCoords.player1;
+
         if (pos === -1) {
-            let baseCoords = {
-                player1: [{x:235,y:45}, {x:275,y:45}, {x:235,y:85}, {x:275,y:85}],
-                player2: [{x:45,y:45}, {x:85,y:45}, {x:45,y:85}, {x:85,y:85}]
-            };
-            let roleKey = role || ludoState.myRole || 'player1';
-            return (baseCoords[roleKey] || baseCoords.player1)[tokenIdx] || {x: 60, y: 60};
+            return yardSpots[tokenIdx] || {x: 60, y: 60};
         }
         let trackX = 145 + ((pos * 3) % 150);
         let trackY = 170 + (tokenIdx * 6);
@@ -2959,13 +2961,13 @@
         ludoCtx.fillStyle = '#1d4ed8'; ludoCtx.fillRect(0, 204, sz, sz);  // Blue Base
         ludoCtx.fillStyle = '#ca8a04'; ludoCtx.fillRect(204, 204, sz, sz); // Yellow Base
 
-        // Draw white inner circles in bases
+        // Draw permanent white base slots (empty or occupied)
         ludoCtx.fillStyle = '#ffffff';
         [
-            {x:45,y:45}, {x:85,y:45}, {x:45,y:85}, {x:85,y:85},
-            {x:235,y:45}, {x:275,y:45}, {x:235,y:85}, {x:275,y:85},
-            {x:45,y:235}, {x:85,y:235}, {x:45,y:275}, {x:85,y:275},
-            {x:235,y:235}, {x:275,y:235}, {x:235,y:275}, {x:275,y:275}
+            {x:45,y:45}, {x:85,y:45}, {x:45,y:85}, {x:85,y:85},       // Red Yard Slots
+            {x:235,y:45}, {x:275,y:45}, {x:235,y:85}, {x:275,y:85},   // Green Yard Slots
+            {x:45,y:235}, {x:85,y:235}, {x:45,y:275}, {x:85,y:275},   // Blue Yard Slots
+            {x:235,y:235}, {x:275,y:235}, {x:235,y:275}, {x:275,y:275} // Yellow Yard Slots
         ].forEach(c => {
             ludoCtx.beginPath(); ludoCtx.arc(c.x, c.y, 13, 0, Math.PI*2); ludoCtx.fill();
             ludoCtx.strokeStyle = '#cbd5e1'; ludoCtx.lineWidth = 1; ludoCtx.stroke();
@@ -3007,7 +3009,7 @@
         drawDiceFace(ludoCtx, 150, 152, 16, ludoState.currentDice[0]);
         drawDiceFace(ludoCtx, 174, 152, 16, ludoState.currentDice[1]);
 
-        // Render Glossy Team-Colored Tokens
+        // Render Glossy Team-Colored Tokens (Only rendering tokens that are still in base or active on track)
         let pKeys = Object.keys(ludoState.tokens);
         pKeys.forEach((pKey) => {
             let tokens = ludoState.tokens[pKey];
