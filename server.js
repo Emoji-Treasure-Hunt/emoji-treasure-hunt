@@ -414,6 +414,26 @@ function emitWhotState(roomId) {
     });
 }
 
+// Helper to broadcast Ludo state safely to each individual user session
+function emitLudoState(roomId) {
+    const room = activeRooms[roomId];
+    if (!room || room.gameType !== 'ludo') return;
+
+    room.players.forEach(username => {
+        const socketId = activeUserSessions[username];
+        if (socketId) {
+            io.to(socketId).emit('ludo_state_update', {
+                roomId,
+                players: room.players,
+                roles: room.roles,
+                positions: room.positions,
+                turn: room.turn,
+                lastAction: room.lastAction
+            });
+        }
+    });
+}
+
 // ==========================================
 // 4. SOCKET.IO GAME LOGIC & MANAGEMENT
 // ==========================================
@@ -693,14 +713,7 @@ io.on('connection', (socket) => {
                         lastAction: 'Naija 2-Dice Ludo started! Roll the dice.'
                     };
 
-                    io.to(roomId).emit('ludo_state_update', {
-                        roomId,
-                        players: [player1.username, player2.username],
-                        roles: activeRooms[roomId].roles,
-                        positions: activeRooms[roomId].positions,
-                        turn: activeRooms[roomId].turn,
-                        lastAction: activeRooms[roomId].lastAction
-                    });
+                    emitLudoState(roomId);
                 } else if (gameType === 'snooker') {
                     activeRooms[roomId] = {
                         gameType: 'snooker',
@@ -909,11 +922,7 @@ io.on('connection', (socket) => {
         room.lastDice2 = null;
         room.turn = opponent;
 
-        io.to(roomId).emit('ludo_state_update', {
-            positions: room.positions,
-            turn: room.turn,
-            lastAction: room.lastAction
-        });
+        emitLudoState(roomId);
     });
 
     // ==========================================

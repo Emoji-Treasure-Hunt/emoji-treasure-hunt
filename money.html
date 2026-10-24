@@ -2862,6 +2862,7 @@
         switchScreen('ludo-game-screen');
         document.getElementById('ludo-active-title').innerText = `${roomTitle} (₦${stakeAmount.toLocaleString()})`;
         document.getElementById('ludo-turn-banner').innerText = '⏳ Waiting for Ludo opponent...';
+        document.getElementById('ludo-opponent-name').innerText = 'Searching...';
 
         socket.emit('join_queue', {
             username,
@@ -2881,7 +2882,7 @@
         }
 
         ludoCanvas.onclick = (e) => {
-            if (!gameActive) return;
+            if (!gameActive || !isMyTurn) return;
             const rect = ludoCanvas.getBoundingClientRect();
             const clickX = e.clientX - rect.left;
             const clickY = e.clientY - rect.top;
@@ -3018,6 +3019,13 @@
         isMyTurn = (state.turn === currentUser);
 
         document.getElementById('ludo-action-log').innerText = state.lastAction || '';
+        
+        if (state.players) {
+            roomPlayers = state.players;
+            const opponentName = roomPlayers.find(p => p !== currentUser) || 'Rival';
+            document.getElementById('ludo-opponent-name').innerText = opponentName;
+        }
+
         const rollBtn = document.getElementById('ludo-roll-btn');
         if (rollBtn) {
             rollBtn.disabled = !isMyTurn;
@@ -3097,7 +3105,7 @@
     let snookerBalls = [];
     
     let isAiming = false;
-    let aimX = 0, aimY = 0;
+    let aimX = 0, aimY =0;
     let shotPower = 50;
 
     function initSnookerCanvas() {
