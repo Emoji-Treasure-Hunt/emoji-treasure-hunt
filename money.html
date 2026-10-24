@@ -1111,6 +1111,8 @@
         <div class="wallet-card">
             <div class="subtitle" style="margin-bottom: 5px;">Available Balance</div>
             <div style="font-size: 1.8rem; color: var(--neon-blue); font-weight: bold;" id="cashier-wallet-balance">₦0.00</div>
+            <!-- Manual Sync / Refresh Balance Button -->
+            <button class="btn btn-secondary" onclick="updateLobbyWallet()" style="margin-top: 8px; padding: 8px; font-size: 0.8rem;">🔄 Sync Balance from Database</button>
         </div>
 
         <div class="wallet-actions">
@@ -2900,7 +2902,7 @@
     }
 
     function getLudoTokenPixelCoords(pos, tokenIdx, role) {
-        // Correctly map player1 to Green base (top-right) and player2 to Red base (top-left)
+        // Player 1 assigned to Green Yard, Player 2 assigned to Red Yard
         let baseCoords = {
             player1: [{x:235,y:45}, {x:275,y:45}, {x:235,y:85}, {x:275,y:85}], // Green Yard (Player 1)
             player2: [{x:45,y:45}, {x:85,y:45}, {x:45,y:85}, {x:85,y:85}]    // Red Yard (Player 2)
@@ -2914,7 +2916,7 @@
             return { x: trackX, y: trackY };
         }
 
-        // Dynamic base re-indexing so tokens shift to available empty slots when any leave
+        // Dynamic base re-indexing so remaining tokens shift to fill available empty slots
         let tokens = ludoState.tokens[roleKey] || [-1, -1, -1, -1];
         let baseIndices = [];
         tokens.forEach((p, idx) => {
@@ -3025,7 +3027,6 @@
         let pKeys = Object.keys(ludoState.tokens);
         pKeys.forEach((pKey) => {
             let tokens = ludoState.tokens[pKey];
-            // Explicitly assign Green to player1 and Red to player2
             let baseColor = (pKey === 'player1') ? '#15803d' : '#b91c1c';
             let highlightColor = (pKey === 'player1') ? '#4ade80' : '#f87171';
 
