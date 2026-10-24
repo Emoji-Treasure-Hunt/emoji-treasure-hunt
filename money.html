@@ -3016,6 +3016,7 @@
 
     socket.on('ludo_state_update', (state) => {
         gameActive = true;
+        if (state.roomId) currentRoomId = state.roomId; // <-- CAPTURED HERE
         isMyTurn = (state.turn === currentUser);
 
         document.getElementById('ludo-action-log').innerText = state.lastAction || '';
@@ -3105,7 +3106,7 @@
     let snookerBalls = [];
     
     let isAiming = false;
-    let aimX = 0, aimY =0;
+    let aimX = 0, aimY = 0;
     let shotPower = 50;
 
     function initSnookerCanvas() {
