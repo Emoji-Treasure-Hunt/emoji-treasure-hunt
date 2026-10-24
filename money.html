@@ -2843,7 +2843,7 @@
             player1: [-1, -1, -1, -1],
             player2: [-1, -1, -1, -1]
         },
-        colors: { player1: '#00ff66', player2: '#ff003c' },
+        colors: { player1: '#15803d', player2: '#b91c1c' },
         currentDice: [null, null],
         myRole: null
     };
@@ -2861,7 +2861,7 @@
         gameActive = false;
         switchScreen('ludo-game-screen');
         document.getElementById('ludo-active-title').innerText = `${roomTitle} (₦${stakeAmount.toLocaleString()})`;
-        document.getElementById('ludo-turn-banner').innerText = '⏳ Waiting for Ludo opponent...';
+        document.getElementById('ludo-turn-banner').innerText = '⏳ Searching for Ludo opponent...';
         document.getElementById('ludo-opponent-name').innerText = 'Searching...';
 
         socket.emit('join_queue', {
@@ -2953,11 +2953,13 @@
         const sz = 136;
         const cellSize = 22.66;
 
-        ludoCtx.fillStyle = '#b91c1c'; ludoCtx.fillRect(0, 0, sz, sz);
-        ludoCtx.fillStyle = '#15803d'; ludoCtx.fillRect(204, 0, sz, sz);
-        ludoCtx.fillStyle = '#1d4ed8'; ludoCtx.fillRect(0, 204, sz, sz);
-        ludoCtx.fillStyle = '#ca8a04'; ludoCtx.fillRect(204, 204, sz, sz);
+        // Draw 4 corner bases
+        ludoCtx.fillStyle = '#b91c1c'; ludoCtx.fillRect(0, 0, sz, sz);   // Red Base
+        ludoCtx.fillStyle = '#15803d'; ludoCtx.fillRect(204, 0, sz, sz);  // Green Base
+        ludoCtx.fillStyle = '#1d4ed8'; ludoCtx.fillRect(0, 204, sz, sz);  // Blue Base
+        ludoCtx.fillStyle = '#ca8a04'; ludoCtx.fillRect(204, 204, sz, sz); // Yellow Base
 
+        // Draw white inner circles in bases
         ludoCtx.fillStyle = '#ffffff';
         [
             {x:45,y:45}, {x:85,y:45}, {x:45,y:85}, {x:85,y:85},
@@ -2969,6 +2971,7 @@
             ludoCtx.strokeStyle = '#cbd5e1'; ludoCtx.lineWidth = 1; ludoCtx.stroke();
         });
 
+        // Draw tracks & colored home columns
         ludoCtx.strokeStyle = '#000000';
         ludoCtx.lineWidth = 1.5;
 
@@ -2977,6 +2980,13 @@
         ludoCtx.fillRect(0, 136, 136, 68);
         ludoCtx.fillRect(136, 204, 68, 136);
         ludoCtx.fillRect(204, 136, 136, 68);
+
+        // Green Home Lane Column
+        ludoCtx.fillStyle = '#15803d';
+        ludoCtx.fillRect(158.66, 22.66, cellSize, cellSize * 5);
+        // Red Home Lane Column
+        ludoCtx.fillStyle = '#b91c1c';
+        ludoCtx.fillRect(22.66, 158.66, cellSize * 5, cellSize);
 
         for (let i = 0; i < 6; i++) {
             for (let j = 0; j < 3; j++) {
@@ -2987,6 +2997,7 @@
             }
         }
 
+        // Center Vault Triangles
         ludoCtx.beginPath(); ludoCtx.moveTo(170, 170); ludoCtx.lineTo(136, 136); ludoCtx.lineTo(204, 136); ludoCtx.fillStyle = '#b91c1c'; ludoCtx.fill(); ludoCtx.stroke();
         ludoCtx.beginPath(); ludoCtx.moveTo(170, 170); ludoCtx.lineTo(204, 136); ludoCtx.lineTo(204, 204); ludoCtx.fillStyle = '#15803d'; ludoCtx.fill(); ludoCtx.stroke();
         ludoCtx.beginPath(); ludoCtx.moveTo(170, 170); ludoCtx.lineTo(204, 204); ludoCtx.lineTo(136, 204); ludoCtx.fillStyle = '#ca8a04'; ludoCtx.fill(); ludoCtx.stroke();
@@ -2996,17 +3007,36 @@
         drawDiceFace(ludoCtx, 150, 152, 16, ludoState.currentDice[0]);
         drawDiceFace(ludoCtx, 174, 152, 16, ludoState.currentDice[1]);
 
+        // Render Glossy Team-Colored Tokens
         let pKeys = Object.keys(ludoState.tokens);
         pKeys.forEach((pKey) => {
             let tokens = ludoState.tokens[pKey];
+            let baseColor = pKey === 'player1' ? '#15803d' : '#b91c1c';
+            let highlightColor = pKey === 'player1' ? '#4ade80' : '#f87171';
+
             tokens.forEach((pos, idx) => {
                 let coords = getLudoTokenPixelCoords(pos, idx, pKey);
+                
+                // Outer ring
                 ludoCtx.beginPath();
-                ludoCtx.arc(coords.x, coords.y, 10, 0, Math.PI * 2);
-                ludoCtx.fillStyle = ludoState.colors[pKey] || '#ffffff';
+                ludoCtx.arc(coords.x, coords.y, 11, 0, Math.PI * 2);
+                ludoCtx.fillStyle = '#000000';
                 ludoCtx.fill();
-                ludoCtx.lineWidth = 2;
-                ludoCtx.strokeStyle = '#000000';
+
+                // Main token body
+                ludoCtx.beginPath();
+                ludoCtx.arc(coords.x, coords.y, 9.5, 0, Math.PI * 2);
+                ludoCtx.fillStyle = baseColor;
+                ludoCtx.fill();
+
+                // Glossy highlight reflection
+                ludoCtx.beginPath();
+                ludoCtx.arc(coords.x - 2, coords.y - 2, 4, 0, Math.PI * 2);
+                ludoCtx.fillStyle = highlightColor;
+                ludoCtx.fill();
+
+                ludoCtx.lineWidth = 1.5;
+                ludoCtx.strokeStyle = '#ffffff';
                 ludoCtx.stroke();
             });
         });
@@ -3016,7 +3046,7 @@
 
     socket.on('ludo_state_update', (state) => {
         gameActive = true;
-        if (state.roomId) currentRoomId = state.roomId; // <-- CAPTURED HERE
+        if (state.roomId) currentRoomId = state.roomId;
         isMyTurn = (state.turn === currentUser);
 
         document.getElementById('ludo-action-log').innerText = state.lastAction || '';
