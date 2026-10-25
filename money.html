@@ -2386,10 +2386,11 @@
         msgEl.className = "success-msg";
         msgEl.innerText = "⏳ Initializing secure Paystack checkout...";
 
+        // Explicitly include current username to match database webhook processing
         fetch('/initialize-payment', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: userEmail, amount: amount })
+            body: JSON.stringify({ email: userEmail, amount: amount, username: currentUser })
         })
         .then(res => res.json())
         .then(result => {
@@ -2902,10 +2903,10 @@
     }
 
     function getLudoTokenPixelCoords(pos, tokenIdx, role) {
-        // Player 1 assigned to Green Yard, Player 2 assigned to Red Yard
+        // Player 1 = Green Yard (top-right), Player 2 = Red Yard (top-left)
         let baseCoords = {
-            player1: [{x:235,y:45}, {x:275,y:45}, {x:235,y:85}, {x:275,y:85}], // Green Yard (Player 1)
-            player2: [{x:45,y:45}, {x:85,y:45}, {x:45,y:85}, {x:85,y:85}]    // Red Yard (Player 2)
+            player1: [{x:235,y:45}, {x:275,y:45}, {x:235,y:85}, {x:275,y:85}], // Green Yard
+            player2: [{x:45,y:45}, {x:85,y:45}, {x:45,y:85}, {x:85,y:85}]    // Red Yard
         };
         let roleKey = role || ludoState.myRole || 'player1';
         let yardSpots = baseCoords[roleKey] || baseCoords.player1;
@@ -2916,17 +2917,7 @@
             return { x: trackX, y: trackY };
         }
 
-        // Dynamic base re-indexing so remaining tokens shift to fill available empty slots
-        let tokens = ludoState.tokens[roleKey] || [-1, -1, -1, -1];
-        let baseIndices = [];
-        tokens.forEach((p, idx) => {
-            if (p === -1) baseIndices.push(idx);
-        });
-
-        let rankInBase = baseIndices.indexOf(tokenIdx);
-        if (rankInBase === -1) return yardSpots[tokenIdx];
-
-        return yardSpots[rankInBase] || yardSpots[0];
+        return yardSpots[tokenIdx] || yardSpots[0];
     }
 
     function drawDiceFace(ctx, x, y, size, num) {
@@ -2975,7 +2966,7 @@
         ludoCtx.fillStyle = '#1d4ed8'; ludoCtx.fillRect(0, 204, sz, sz);  // Blue Base
         ludoCtx.fillStyle = '#ca8a04'; ludoCtx.fillRect(204, 204, sz, sz); // Yellow Base
 
-        // Draw permanent white base slots (empty or occupied)
+        // Draw permanent white base slots
         ludoCtx.fillStyle = '#ffffff';
         [
             {x:45,y:45}, {x:85,y:45}, {x:45,y:85}, {x:85,y:85},       // Red Yard Slots
@@ -3031,6 +3022,8 @@
             let highlightColor = (pKey === 'player1') ? '#4ade80' : '#f87171';
 
             tokens.forEach((pos, idx) => {
+                // If token has moved out of base (pos !== -1), render on track. 
+                // If pos === -1, render inside the yard slot.
                 let coords = getLudoTokenPixelCoords(pos, idx, pKey);
                 
                 // Outer ring
@@ -3071,6 +3064,9 @@
             roomPlayers = state.players;
             const opponentName = roomPlayers.find(p => p !== currentUser) || 'Rival';
             document.getElementById('ludo-opponent-name').innerText = opponentName;
+            
+            // Explicitly assign player roles based on index order: Index 0 = Green (player1), Index 1 = Red (player2)
+            ludoState.myRole = (roomPlayers[0] === currentUser) ? 'player1' : 'player2';
         }
 
         const rollBtn = document.getElementById('ludo-roll-btn');
@@ -3081,12 +3077,6 @@
 
         if (state.positions) {
             ludoState.tokens = state.positions;
-        }
-
-        if (state.roles && state.roles[currentUser]) {
-            ludoState.myRole = state.roles[currentUser];
-        } else if (state.players) {
-            ludoState.myRole = (state.players[0] === currentUser) ? 'player1' : 'player2';
         }
 
         const turnBanner = document.getElementById('ludo-turn-banner');
