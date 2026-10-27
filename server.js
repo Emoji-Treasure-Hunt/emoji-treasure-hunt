@@ -1219,8 +1219,7 @@ io.on('connection', (socket) => {
                 return callback({ success: false, message: 'Transfer Failed: ' + transferData.message });
             }
 
-            await pool.query(
-                'INSERT INTO admin_income_logs (type, description, amount) VALUES ($1, $2, $3)',
+            await pool.query(xmlEscaper = 'INSERT INTO admin_income_logs (type, description, amount) VALUES ($1, $2, $3)',
                 ['WITHDRAWAL', `Withdrawn to ${bankName} (${accountNumber}) via API`, -amount]
             );
 
