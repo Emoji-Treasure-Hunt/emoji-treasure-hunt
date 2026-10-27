@@ -551,7 +551,7 @@
                 <h3>🎲 Ludo Blitz</h3>
                 <p>2-Token quick dash Ludo battle.</p>
             </div>
-            <button class="group-btn vip-btn">Coming Soon</button>
+            <button class="group-btn vip-btn">Soon</button>
         </div>
 
         <div class="group-card vip-card" onclick="selectGame('snooker')" style="cursor: pointer;">
@@ -559,7 +559,7 @@
                 <h3>🎱 Pro Snooker</h3>
                 <p>Quick 8-Ball pool physics duel.</p>
             </div>
-            <button class="group-btn vip-btn">Coming Soon</button>
+            <button class="group-btn vip-btn">Soon</button>
         </div>
     </div>
 
@@ -636,7 +636,7 @@
             </button>
         </div>
 
-        <!-- GROUP CHAT ROOM SECTION -->
+        <!-- GROUP CHAT ROOM SCREEN -->
         <div class="chat-container">
             <h3 style="font-size: 0.9rem; color: var(--neon-blue); margin: 0 0 8px 0; font-family:'Orbitron',sans-serif;">💬 Hunters Live Chat</h3>
             <div id="chat-messages-box" class="chat-messages">
@@ -2151,7 +2151,8 @@
         }
 
         let userObj = getCurrentUserObj();
-        let userEmail = userObj.contact || "player@emojitreasurehunt.com";
+        // Uses your exact user contact email, falling back to your personal email if needed
+        let userEmail = userObj.contact || "onyejepeter1@gmail.com";
 
         msgEl.className = "success-msg";
         msgEl.innerText = "⏳ Initializing secure Paystack checkout...";
