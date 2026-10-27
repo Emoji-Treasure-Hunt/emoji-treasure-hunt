@@ -2561,7 +2561,7 @@
         pendingWhot20CardIndex = null;
     }
 
-    function `drawWhotCard`() {
+    function drawWhotCard() {
         if (!gameActive || !isMyTurn) return;
         clearInterval(whotTurnInterval);
         socket.emit('whot_draw_card', {
