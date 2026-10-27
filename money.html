@@ -837,7 +837,7 @@
                 <p>Stake: ₦10,000 | 2 Players | Payout: ₦20,000</p>
                 <p id="snooker-stat-10000" style="color: var(--neon-gold); margin-top: 2px; font-size: 0.8rem;">🟢 0 Active | ⏳ 0 Waiting</p>
             </div>
-            <button class="group-btn vip-btn" onclick="joinSnookerQueue(10000, 'Snooker Diamond Arena')">Play</button>
+            <button class="group-btn vip-btn" onclick="joinSnookerQueue(10000, 'Diamond Arena')">Play</button>
         </div>
 
         <div class="group-card vip-card">
@@ -965,7 +965,7 @@
             </div>
         </div>
 
-        <div style="text-align: left; font-size: 0.80rem; color: #94a3b8; margin-bottom: 6px; font-family: 'Orbitron', sans-serif;">YOUR HAND (TAP TO PLAY):</div>
+        <div style="text-align: left; font-size: 0.8rem; color: #94a3b8; margin-bottom: 6px; font-family: 'Orbitron', sans-serif;">YOUR HAND (TAP TO PLAY):</div>
         <div id="whot-my-hand" style="display: flex; gap: 8px; overflow-x: auto; padding: 10px 4px; min-height: 115px;"></div>
     </div>
 
@@ -1159,7 +1159,7 @@
 
             <div style="background: rgba(0, 243, 255, 0.08); border-left: 3px solid var(--neon-blue); padding: 10px; border-radius: 6px; margin-bottom: 12px; text-align: left;">
                 <p style="font-size: 0.85rem; color: #f8fafc; margin: 0 0 4px 0; font-weight: bold;">⚡ Fast Manual Payouts</p>
-                <p style="font-size: 0.80rem; color: #94a3b8; margin: 0;">Expect your payout in <strong>15 mins to 30 mins</strong> directly to your bank account.</p>
+                <p style="font-size: 0.8rem; color: #94a3b8; margin: 0;">Expect your payout in <strong>15 mins to 30 mins</strong> directly to your bank account.</p>
             </div>
 
             <button class="btn" id="player-withdraw-btn" onclick="processWithdrawal()" disabled style="opacity: 0.5; cursor: not-allowed;">Withdraw to Bank</button>
@@ -2316,7 +2316,18 @@
     function showWalletCashier() {
         switchScreen('wallet-screen');
         updateLobbyWallet();
+        
         loadAllBanks();
+
+        let userObj = getCurrentUserObj();
+        document.getElementById('cashier-wallet-balance').innerText = `₦${userObj.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
+        document.getElementById('deposit-msg').innerHTML = '';
+        document.getElementById('withdraw-msg').innerHTML = '';
+        document.getElementById('account-number').value = '';
+        document.getElementById('player-verification-box').style.display = 'none';
+        document.getElementById('player-withdraw-btn').disabled = true;
+        document.getElementById('player-withdraw-btn').style.opacity = '0.5';
+        document.getElementById('player-withdraw-btn').style.cursor = 'not-allowed';
     }
 
     function switchWalletTab(tab) {
@@ -2418,9 +2429,15 @@
             if (response && response.success) {
                 userObj.balance -= amount;
                 saveUserData(userObj);
+
                 document.getElementById('cashier-wallet-balance').innerText = `₦${userObj.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
                 msgEl.className = "success-msg";
-                msgEl.innerText = `✅ Withdrawal requested successfully!`;
+                msgEl.innerText = `✅ Withdrawal requested successfully! Expect your payout in 15 mins to 30 mins.`;
+                document.getElementById('withdraw-amount').value = '';
+                document.getElementById('account-number').value = '';
+                document.getElementById('player-verification-box').style.display = 'none';
+                document.getElementById('player-withdraw-btn').disabled = true;
+                document.getElementById('player-withdraw-btn').style.opacity = '0.5';
             } else {
                 msgEl.className = "error-msg";
                 msgEl.innerText = `❌ Withdrawal failed: ${response.message}`;
@@ -2435,6 +2452,9 @@
 
     function showChangePasswordScreen() {
         switchScreen('change-password-screen');
+        document.getElementById('old-password').value = '';
+        document.getElementById('new-password').value = '';
+        document.getElementById('change-pwd-msg').innerText = '';
     }
 
     function executeChangePassword() {
@@ -2446,6 +2466,8 @@
             if (response && response.success) {
                 msgEl.className = "success-msg";
                 msgEl.innerText = "✅ Password updated successfully!";
+                document.getElementById('old-password').value = '';
+                document.getElementById('new-password').value = '';
             } else {
                 msgEl.className = "error-msg";
                 msgEl.innerText = response ? response.message : "Failed to update password.";
@@ -2463,10 +2485,12 @@
             alert("⚠️ You cannot leave the room while an active match is in progress!");
             return;
         }
+
         if (selectedStake > 0) {
             socket.emit('leave_queue', { username: currentUser });
             selectedStake = 0;
         }
+
         clearInterval(timerInterval);
         switchScreen('lobby-screen');
         updateLobbyWallet();
@@ -2479,8 +2503,9 @@
 
         socket.emit('get_leaderboard', (response) => {
             container.innerHTML = '';
+
             if (!response || !response.success || !response.leaderboard || response.leaderboard.length === 0) {
-                container.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 20px;">No players found on the leaderboard yet.</div>`;
+                container.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 20px;">No players found on the leaderboard yet. Be the first!</div>`;
                 return;
             }
 
@@ -2515,12 +2540,17 @@
 
     function selectBox(index, boxEl) {
         if (!gameActive || !isMyTurn) return;
+
         const messageEl = document.getElementById('message');
         
         if (index === treasureIndex) {
             boxEl.classList.add('winner');
             boxEl.innerText = currentTreasureEmoji;
-            socket.emit('player_won', { roomId: currentRoomId, winner: currentUser });
+            
+            socket.emit('player_won', {
+                roomId: currentRoomId,
+                winner: currentUser
+            });
         } else {
             boxEl.classList.add('revealed');
             let randomDecoy = decoyPool[Math.floor(Math.random() * decoyPool.length)];
@@ -2528,7 +2558,11 @@
             boxEl.disabled = true;
             messageEl.innerText = "Wrong box! Turn passing to opponent...";
 
-            socket.emit('play_turn', { roomId: currentRoomId, index: index, decoyEmoji: randomDecoy });
+            socket.emit('play_turn', {
+                roomId: currentRoomId,
+                index: index,
+                decoyEmoji: randomDecoy
+            });
 
             isMyTurn = false;
             currentTurnPlayer = roomPlayers.find(p => p !== currentUser);
@@ -2544,11 +2578,18 @@
         }
     }
 
+    // CHAT FUNCTIONS
     function sendChatMessage() {
         const inputField = document.getElementById('chat-input-field');
         const message = inputField.value.trim();
+
         if (!message || !currentUser) return;
-        socket.emit('send_chat_message', { username: currentUser, message: message });
+
+        socket.emit('send_chat_message', {
+            username: currentUser,
+            message: message
+        });
+
         inputField.value = '';
     }
 
@@ -2560,11 +2601,14 @@
 
     socket.on('receive_chat_message', (data) => {
         const chatBox = document.getElementById('chat-messages-box');
+        
         if (chatBox.children.length === 1 && chatBox.children[0].tagName === 'DIV' && chatBox.children[0].style.textAlign === 'center') {
             chatBox.innerHTML = '';
         }
+
         const msgDiv = document.createElement('div');
         msgDiv.classList.add('chat-msg-item');
+        
         let isMe = (data.username === currentUser);
         let userColor = isMe ? '#00ff66' : '#00f3ff';
 
@@ -2573,6 +2617,7 @@
             <span class="chat-msg-time" style="font-size: 0.65rem; color: #64748b; float: right;">${data.time}</span><br>
             <span style="color: #f8fafc;">${escapeHtml(data.message)}</span>
         `;
+
         chatBox.appendChild(msgDiv);
         chatBox.scrollTop = chatBox.scrollHeight;
     });
@@ -2582,7 +2627,7 @@
     }
 
     // ==========================================
-    // NAIJA WHOT CLIENT LOGIC (FIXED MATCHMAKING)
+    // NAIJA WHOT CLIENT LOGIC (FIXED)
     // ==========================================
     let pendingWhot20CardIndex = null;
     let whotTurnInterval = null;
@@ -2612,12 +2657,12 @@
         document.getElementById('whot-active-title').innerText = `${roomTitle} (₦${stakeAmount.toLocaleString()})`;
         document.getElementById('whot-opponent-name').innerText = 'Searching...';
         document.getElementById('whot-opponent-cards').innerText = '0';
-        document.getElementById('whot-turn-banner').innerText = '⏳ Searching for Whot opponent...';
+        document.getElementById('whot-turn-banner').innerText = '⏳ Waiting for opponent to join table...';
         document.getElementById('whot-my-hand').innerHTML = '';
 
-        // Explicitly sending gameType: 'whot' to match server queue
+        // Explicitly set gameType to 'whot' to resolve matchmaking
         socket.emit('join_queue', {
-            username,
+            username: username,
             stake: stakeAmount,
             gameType: 'whot'
         });
@@ -2768,84 +2813,6 @@
             selectedStake = 0;
         }
         switchScreen('whot-lobby-screen');
-        updateLobbyWallet();
-    }
-
-    // ==========================================
-    // LUDO BLITZ CLIENT LOGIC
-    // ==========================================
-    function joinLudoQueue(stakeAmount, roomTitle) {
-        const username = localStorage.getItem('emoji_current_user_secure');
-        if (!username) return alert("Please log in first!");
-
-        let userObj = getCurrentUserObj();
-        if (userObj.balance < stakeAmount) {
-            return alert(`Insufficient balance! Need at least ₦${stakeAmount.toLocaleString()}.`);
-        }
-
-        selectedStake = stakeAmount;
-        gameActive = false;
-        switchScreen('ludo-game-screen');
-        document.getElementById('ludo-active-title').innerText = `${roomTitle} (₦${stakeAmount.toLocaleString()})`;
-        document.getElementById('ludo-turn-banner').innerText = '⏳ Searching for Ludo opponent...';
-
-        socket.emit('join_queue', {
-            username,
-            stake: stakeAmount,
-            gameType: 'ludo'
-        });
-    }
-
-    socket.on('ludo_state_update', (state) => {
-        gameActive = true;
-        isMyTurn = (state.turn === currentUser);
-
-        document.getElementById('ludo-action-log').innerText = state.lastAction || '';
-        document.getElementById('ludo-roll-btn').disabled = !isMyTurn;
-        document.getElementById('ludo-roll-btn').style.opacity = isMyTurn ? '1' : '0.5';
-
-        const turnBanner = document.getElementById('ludo-turn-banner');
-        turnBanner.innerHTML = isMyTurn ? `👉 <strong style="color:#00ff66;">YOUR TURN TO ROLL!</strong>` : `⏳ <strong style="color:#ff003c;">OPPONENT'S TURN...</strong>`;
-    });
-
-    socket.on('ludo_action_log', (data) => {
-        document.getElementById('ludo-action-log').innerText = data.message;
-    });
-
-    function rollLudoDice() {
-        if (!gameActive || !isMyTurn) return;
-        socket.emit('ludo_roll_dice', { roomId: currentRoomId, username: currentUser });
-    }
-
-    socket.on('ludo_dice_rolled', (data) => {
-        document.getElementById('ludo-dice-box').innerText = `🎲 ${data.diceRoll}`;
-    });
-
-    function moveLudoToken(tokenIndex) {
-        if (!gameActive || !isMyTurn) return;
-        socket.emit('ludo_move_token', { roomId: currentRoomId, username: currentUser, tokenIndex });
-    }
-
-    socket.on('ludo_game_over', (data) => {
-        gameActive = false;
-        selectedStake = 0;
-        const turnBanner = document.getElementById('ludo-turn-banner');
-        if (data.winner === currentUser) {
-            let userObj = getCurrentUserObj();
-            userObj.totalWins = (userObj.totalWins || 0) + 1;
-            saveUserData(userObj);
-
-            turnBanner.innerHTML = `<strong style="color:#00ff66;">🎉 LUDO VICTORY! WON ₦${data.netWinnings.toLocaleString()}!</strong>`;
-        } else {
-            turnBanner.innerHTML = `<strong style="color:#ff003c;">❌ GAME OVER! ${data.winner} WON!</strong>`;
-        }
-        updateLobbyWallet();
-    });
-
-    function leaveLudoGame() {
-        if (gameActive) return alert("⚠️ Match in progress!");
-        if (selectedStake > 0) socket.emit('leave_queue', { username: currentUser });
-        switchScreen('ludo-lobby-screen');
         updateLobbyWallet();
     }
 </script>

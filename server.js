@@ -46,7 +46,7 @@ const makeHttpsRequest = (options, postData = null) => {
 
 // ==========================================
 // INITIALIZE DATABASE TABLES
-
+// ==========================================
 async function initDB() {
     try {
         await pool.query(`
@@ -76,6 +76,7 @@ async function initDB() {
         await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_earnings DECIMAL(12, 2) DEFAULT 0.00`);
         await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_count INTEGER DEFAULT 0`);
         
+        // Auto-restore the failed 30 NGN Admin withdrawal so the balance matches reality
         await pool.query(`
             INSERT INTO admin_income_logs (type, description, amount)
             SELECT 'REFUND', 'System restore for unfulfilled ₦30 withdrawal', 30.00
@@ -92,7 +93,7 @@ async function initDB() {
 initDB();
 
 // ==========================================
-// 1. SECURE PAYSTACK WEBHOOK ROUTE
+// 1. SECURE PAYSTACK WEBHOOK ROUTE (USERNAME & EMAIL FALLBACK)
 // ==========================================
 app.post('/paystack-webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     const paystackSignature = req.headers['x-paystack-signature'];
@@ -305,7 +306,7 @@ app.post('/verify-bank-account', (req, res) => {
 });
 
 // ==========================================
-// 3. MULTI-GAME ENGINE HELPERS (TREASURE, WHOT, LUDO & SNOOKER)
+// 3. MULTI-GAME ENGINE HELPERS (TREASURE, WHOT & LUDO)
 // ==========================================
 let waitingPlayers = [];
 let activeRooms = {};
@@ -439,26 +440,6 @@ function emitWhotState(roomId) {
     });
 }
 
-// Helper to broadcast Ludo state safely to each individual user session
-function emitLudoState(roomId) {
-    const room = activeRooms[roomId];
-    if (!room || room.gameType !== 'ludo') return;
-
-    room.players.forEach(username => {
-        const socketId = activeUserSessions[username];
-        if (socketId) {
-            io.to(socketId).emit('ludo_state_update', {
-                roomId,
-                players: room.players,
-                roles: room.roles,
-                positions: room.positions,
-                turn: room.turn,
-                lastAction: room.lastAction
-            });
-        }
-    });
-}
-
 // ==========================================
 // 4. SOCKET.IO GAME LOGIC & MANAGEMENT
 // ==========================================
@@ -474,16 +455,12 @@ io.on('connection', (socket) => {
         let whotActiveCounts = {};
         let ludoWaitingCounts = {};
         let ludoActiveCounts = {};
-        let snookerWaitingCounts = {};
-        let snookerActiveCounts = {};
 
         waitingPlayers.forEach(p => {
             if (p.gameType === 'whot') {
                 whotWaitingCounts[p.stake] = (whotWaitingCounts[p.stake] || 0) + 1;
             } else if (p.gameType === 'ludo') {
                 ludoWaitingCounts[p.stake] = (ludoWaitingCounts[p.stake] || 0) + 1;
-            } else if (p.gameType === 'snooker') {
-                snookerWaitingCounts[p.stake] = (snookerWaitingCounts[p.stake] || 0) + 1;
             } else {
                 waitingCounts[p.stake] = (waitingCounts[p.stake] || 0) + 1;
             }
@@ -494,19 +471,12 @@ io.on('connection', (socket) => {
                 whotActiveCounts[room.stake] = (whotActiveCounts[room.stake] || 0) + room.players.length;
             } else if (room.gameType === 'ludo') {
                 ludoActiveCounts[room.stake] = (ludoActiveCounts[room.stake] || 0) + room.players.length;
-            } else if (room.gameType === 'snooker') {
-                snookerActiveCounts[room.stake] = (snookerActiveCounts[room.stake] || 0) + room.players.length;
             } else {
                 activeCounts[room.stake] = (activeCounts[room.stake] || 0) + room.players.length;
             }
         });
 
-        io.emit('lounge_stats_update', { 
-            waitingCounts, activeCounts, 
-            whotWaitingCounts, whotActiveCounts, 
-            ludoWaitingCounts, ludoActiveCounts, 
-            snookerWaitingCounts, snookerActiveCounts 
-        });
+        io.emit('lounge_stats_update', { waitingCounts, activeCounts, whotWaitingCounts, whotActiveCounts, ludoWaitingCounts, ludoActiveCounts });
     };
 
     broadcastLoungeStats();
@@ -523,20 +493,6 @@ io.on('connection', (socket) => {
 
         activeUserSessions[username] = socket.id;
         socket.authUsername = username;
-    });
-
-    socket.on('login_user', async (data, callback) => {
-        const { username, password } = data;
-        try {
-            const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
-            if (result.rows.length === 0) {
-                await pool.query('INSERT INTO users (username, email, password, balance) VALUES ($1, $2, $3, 10000.00) ON CONFLICT (username) DO NOTHING', [username, username+'@arcade.com', 'hash']);
-            }
-            callback({ success: true, user: { username, email: username+'@arcade.com', balance: 10000 } });
-        } catch (err) {
-            console.error('Login error:', err);
-            callback({ success: false, message: 'Server error during login.' });
-        }
     });
 
     socket.on('get_balance', async (data, callback) => {
@@ -602,39 +558,254 @@ io.on('connection', (socket) => {
     });
 
     socket.on('send_email_otp', async (data, callback) => {
-        callback({ success: true, message: 'OTP sent!' });
+        const { email } = data;
+        if (!email) {
+            return callback({ success: false, message: 'Email address is required.' });
+        }
+
+        const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+        otpStorage[email] = verificationCode;
+
+        try {
+            const emailResult = await resend.emails.send({
+                from: 'Emoji Treasure Hunt <support@emojitreasurehunt.com>',
+                to: [email],
+                subject: 'Verify Your Email Address',
+                html: `
+                    <div style="font-family: Arial, sans-serif; padding: 20px;">
+                        <h2>Welcome to Emoji Treasure Hunt!</h2>
+                        <p>Your verification code is:</p>
+                        <h1 style="color: #4F46E5; letter-spacing: 2px;">${verificationCode}</h1>
+                        <p>Please enter this code in the app to complete your verification.</p>
+                    </div>
+                `
+            });
+
+            if (emailResult.error) {
+                console.warn('Resend API restricted delivery, falling back to console log:', emailResult.error);
+                console.log(`[TEST MODE OTP] Code for ${email}: ${verificationCode}`);
+            }
+
+            callback({ success: true, message: 'Verification code generated successfully!' });
+        } catch (err) {
+            console.warn('Resend exception, using console fallback:', err);
+            console.log(`[TEST MODE OTP] Code for ${email}: ${verificationCode}`);
+            callback({ success: true, message: 'Verification code generated successfully!' });
+        }
     });
 
     socket.on('verify_email_otp', (data, callback) => {
-        callback({ success: true });
+        const { email, enteredOtp } = data;
+        if (otpStorage[email] && otpStorage[email] === enteredOtp) {
+            delete otpStorage[email];
+            callback({ success: true });
+        } else {
+            callback({ success: false, message: 'Invalid or expired verification code.' });
+        }
     });
 
     socket.on('register_user', async (data, callback) => {
-        callback({ success: true, message: 'Registration successful!' });
+        const username = data ? data.username : null;
+        const email = data ? (data.email || data.contact) : null;
+        const password = data ? data.password : null;
+        const referredByRaw = data && data.referredBy ? data.referredBy.trim() : null;
+
+        if (!username || !email || !password) {
+            return callback({ success: false, message: 'Missing required registration fields.' });
+        }
+
+        try {
+            const existing = await pool.query('SELECT id FROM users WHERE username = $1 OR email = $2', [username, email]);
+            if (existing.rows.length > 0) {
+                return callback({ success: false, message: 'Username or email already exists.' });
+            }
+
+            let validReferrer = null;
+            if (referredByRaw && referredByRaw.toLowerCase() !== username.toLowerCase()) {
+                const refCheck = await pool.query('SELECT username FROM users WHERE LOWER(username) = LOWER($1)', [referredByRaw]);
+                if (refCheck.rows.length > 0) {
+                    validReferrer = refCheck.rows[0].username;
+                }
+            }
+
+            const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+            await pool.query(
+                `INSERT INTO users (username, email, password, balance, referred_by, referral_earnings, referral_count) VALUES ($1, $2, $3, 0.00, $4, 0.00, 0)`,
+                [username, email, hashedPassword, validReferrer]
+            );
+
+            if (validReferrer) {
+                await pool.query(
+                    `UPDATE users SET referral_count = COALESCE(referral_count, 0) + 1 WHERE username = $1`,
+                    [validReferrer]
+                );
+            }
+
+            callback({ success: true, message: 'Registration successful!' });
+        } catch (err) {
+            console.error('Registration error details:', err);
+            callback({ success: false, message: 'Server error during registration.' });
+        }
+    });
+
+    socket.on('login_user', async (data, callback) => {
+        const { username, password } = data;
+        try {
+            const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+            if (result.rows.length === 0) {
+                return callback({ success: false, message: 'Invalid username or password.' });
+            }
+
+            const user = result.rows[0];
+            const match = await bcrypt.compare(password, user.password);
+            if (!match) {
+                return callback({ success: false, message: 'Invalid username or password.' });
+            }
+
+            callback({ 
+                success: true, 
+                user: { 
+                    username: user.username, 
+                    email: user.email, 
+                    balance: parseFloat(user.balance),
+                    referralEarnings: user.referral_earnings ? parseFloat(user.referral_earnings) : 0,
+                    referralCount: user.referral_count ? parseInt(user.referral_count, 10) : 0
+                } 
+            });
+        } catch (err) {
+            console.error('Login error:', err);
+            callback({ success: false, message: 'Server error during login.' });
+        }
     });
 
     socket.on('change_password', async (data, callback) => {
-        callback({ success: true, message: 'Password updated!' });
+        const { username, oldPassword, newPassword } = data;
+        try {
+            const result = await pool.query('SELECT password FROM users WHERE username = $1', [username]);
+            if (result.rows.length === 0) {
+                return callback({ success: false, message: 'User not found.' });
+            }
+
+            const isOldMatch = await bcrypt.compare(oldPassword, result.rows[0].password);
+            if (!isOldMatch) {
+                return callback({ success: false, message: 'Current password is incorrect.' });
+            }
+
+            const hashedNewPassword = await bcrypt.hash(newPassword, saltRounds);
+            await pool.query('UPDATE users SET password = $1 WHERE username = $2', [hashedNewPassword, username]);
+            callback({ success: true, message: 'Password updated successfully!' });
+        } catch (err) {
+            console.error('Password change error:', err);
+            callback({ success: false, message: 'Server error updating password.' });
+        }
     });
 
     socket.on('request_withdrawal', async (data, callback) => {
-        callback({ success: true, message: 'Withdrawal requested successfully!' });
+        const { username, amount, bankName, accountNumber, accountName } = data;
+
+        if (!username || !amount || !bankName || !accountNumber) {
+            return callback({ success: false, message: 'Missing withdrawal parameters.' });
+        }
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            let userRes = await client.query('SELECT * FROM users WHERE username = $1 OR email = $1', [username]);
+            if (userRes.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return callback({ success: false, message: `User '${username}' not found. Please log out and log back in.` });
+            }
+
+            const dbUser = userRes.rows[0];
+            const currentBalance = parseFloat(dbUser.balance);
+
+            if (currentBalance < amount) {
+                await client.query('ROLLBACK');
+                return callback({ success: false, message: 'Insufficient wallet balance.' });
+            }
+
+            await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [amount, dbUser.username]);
+
+            await client.query(
+                'INSERT INTO withdrawals (username, amount, bank_name, account_number, account_name, status) VALUES ($1, $2, $3, $4, $5, $6)',
+                [dbUser.username, amount, bankName, accountNumber, accountName, 'Pending']
+            );
+
+            await client.query(
+                'INSERT INTO transactions (email, type, amount, description) VALUES ($1, $2, $3, $4)',
+                [dbUser.email, 'WITHDRAWAL', amount, `Manual withdrawal request to ${bankName} (${accountNumber})`]
+            );
+
+            await client.query('COMMIT');
+            callback({ success: true, message: 'Withdrawal request submitted successfully! Expect your payout in 15 mins to 30 mins.' });
+        } catch (err) {
+            await client.query('ROLLBACK');
+            console.error('Manual withdrawal error:', err);
+            callback({ success: false, message: 'Server error processing withdrawal.' });
+        } finally {
+            client.release();
+        }
     });
 
     socket.on('get_pending_withdrawals', async (callback) => {
-        callback({ success: true, withdrawals: [] });
+        try {
+            const result = await pool.query("SELECT * FROM withdrawals WHERE status = 'Pending' ORDER BY created_at ASC");
+            callback({ success: true, withdrawals: result.rows });
+        } catch (err) {
+            console.error('Error fetching pending withdrawals:', err);
+            callback({ success: false, message: 'Error fetching withdrawal requests.' });
+        }
     });
 
     socket.on('complete_withdrawal', async (data, callback) => {
-        callback({ success: true });
+        const { withdrawalId } = data;
+        try {
+            await pool.query("UPDATE withdrawals SET status = 'Completed' WHERE id = $1", [withdrawalId]);
+            callback({ success: true, message: 'Withdrawal marked as completed.' });
+        } catch (err) {
+            console.error('Error completing withdrawal:', err);
+            callback({ success: false, message: 'Error updating withdrawal status.' });
+        }
     });
 
     socket.on('deny_withdrawal', async (data, callback) => {
-        callback({ success: true });
+        const { withdrawalId } = data;
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            const wRes = await client.query("SELECT * FROM withdrawals WHERE id = $1 AND status = 'Pending'", [withdrawalId]);
+            if (wRes.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return callback({ success: false, message: 'Withdrawal request not found or already processed.' });
+            }
+
+            const withdrawal = wRes.rows[0];
+            const { username, amount } = withdrawal;
+
+            await client.query("UPDATE withdrawals SET status = 'Denied' WHERE id = $1", [withdrawalId]);
+            await client.query('UPDATE users SET balance = balance + $1 WHERE username = $2', [amount, username]);
+
+            await client.query(
+                'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
+                ['REFUND', amount, `Refunded denied withdrawal #${withdrawalId}`, username]
+            );
+
+            await client.query('COMMIT');
+            callback({ success: true, message: 'Withdrawal denied and funds refunded to player balance.' });
+        } catch (err) {
+            await client.query('ROLLBACK');
+            console.error('Error denying withdrawal:', err);
+            callback({ success: false, message: 'Server error processing denial.' });
+        } finally {
+            client.release();
+        }
     });
 
     // ==========================================
-    // UNIFIED MULTI-GAME QUEUE (TREASURE, WHOT, LUDO & SNOOKER)
+    // UNIFIED MULTI-GAME QUEUE (TREASURE, WHOT & LUDO)
     // ==========================================
     socket.on('join_queue', async (data) => {
         const { username, stake, gameType = 'treasure' } = data;
@@ -673,7 +844,6 @@ io.on('connection', (socket) => {
                 let gameLabel = 'Emoji Treasure Hunt';
                 if (gameType === 'whot') gameLabel = 'Naija Whot';
                 if (gameType === 'ludo') gameLabel = 'Ludo Blitz';
-                if (gameType === 'snooker') gameLabel = 'Pro Snooker';
 
                 await client.query(
                     'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
@@ -725,35 +895,16 @@ io.on('connection', (socket) => {
                         players: [player1.username, player2.username],
                         stake: numericStake,
                         positions: {
-                            [player1.username]: [-1, -1, -1, -1],
-                            [player2.username]: [-1, -1, -1, -1]
-                        },
-                        roles: {
-                            [player1.username]: 'player1', // Green
-                            [player2.username]: 'player2'  // Red
+                            [player1.username]: [0, 0],
+                            [player2.username]: [0, 0]
                         },
                         turn: player1.username,
-                        lastDice1: null,
-                        lastDice2: null,
-                        lastAction: 'Naija 2-Dice Ludo started! Roll the dice.'
+                        lastDice: null,
+                        lastAction: 'Ludo match started! Roll the dice.'
                     };
 
-                    emitLudoState(roomId);
-                } else if (gameType === 'snooker') {
-                    activeRooms[roomId] = {
-                        gameType: 'snooker',
-                        players: [player1.username, player2.username],
-                        stake: numericStake,
-                        scores: {
-                            [player1.username]: 0,
-                            [player2.username]: 0
-                        },
-                        turn: player1.username,
-                        lastAction: 'Pro Snooker match started! Take your shot.'
-                    };
-
-                    io.to(roomId).emit('snooker_state_update', {
-                        scores: activeRooms[roomId].scores,
+                    io.to(roomId).emit('ludo_state_update', {
+                        positions: activeRooms[roomId].positions,
                         turn: activeRooms[roomId].turn,
                         lastAction: activeRooms[roomId].lastAction
                     });
@@ -820,8 +971,39 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('match_timeout', async (data) => {
+        const { roomId } = data;
+        const room = activeRooms[roomId];
+        if (room) {
+            delete activeRooms[roomId];
+
+            const client = await pool.connect();
+            try {
+                await client.query('BEGIN');
+
+                for (const username of room.players) {
+                    const stake = room.stake;
+                    await client.query('UPDATE users SET balance = balance + $1 WHERE username = $2', [stake, username]);
+                    await client.query(
+                        'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
+                        ['REFUND', stake, `Match timed out (Draw) - Stake refunded`, username]
+                    );
+                }
+
+                await client.query('COMMIT');
+                io.to(roomId).emit('game_over', { winner: null, reason: 'timeout' });
+            } catch (err) {
+                await client.query('ROLLBACK');
+                console.error('Error processing match timeout refunds:', err);
+            } finally {
+                client.release();
+                broadcastLoungeStats();
+            }
+        }
+    });
+
     // ==========================================
-    // NAIJA WHOT EVENTS
+    // NAIJA WHOT 1V1 EVENTS & 8s TIMEOUT
     // ==========================================
     socket.on('whot_play_card', async (data) => {
         const { roomId, username, cardIndex, chosenShape } = data;
@@ -835,9 +1017,29 @@ io.on('connection', (socket) => {
         const card = playerHand[cardIndex];
         const opponent = room.players.find(p => p !== username);
 
+        if (room.pendingPick > 0) {
+            socket.emit('whot_invalid_move', { message: `You must draw ${room.pendingPick} cards from the market!` });
+            return;
+        }
+
+        let isValid = false;
+        if (card.shape === 'whot') {
+            isValid = true;
+        } else if (room.calledShape) {
+            isValid = (card.shape === room.calledShape);
+        } else {
+            isValid = (card.shape === room.topCard.shape || card.number === room.topCard.number);
+        }
+
+        if (!isValid) {
+            socket.emit('whot_invalid_move', { message: 'Card does not match shape or number!' });
+            return;
+        }
+
         playerHand.splice(cardIndex, 1);
         room.topCard = card;
         room.discardPile.push(card);
+        room.calledShape = null;
 
         if (playerHand.length === 0) {
             delete activeRooms[roomId];
@@ -845,20 +1047,44 @@ io.on('connection', (socket) => {
                 const payoutInfo = await settleMatchWinner(room, username, 'Naija Whot');
                 io.to(roomId).emit('whot_game_over', {
                     winner: username,
+                    reason: 'cards_finished',
                     netWinnings: payoutInfo.netWinnings,
                     feeCharged: payoutInfo.feeCharged,
                     commissionPercent: payoutInfo.commissionPercent
                 });
             } catch (err) {
-                console.error(err);
+                console.error('Error settling Whot winner:', err);
             } finally {
                 broadcastLoungeStats();
             }
             return;
         }
 
-        room.turn = opponent;
-        room.lastAction = `${username} played ${card.shape.toUpperCase()} ${card.number}.`;
+        if (card.shape === 'whot') {
+            const validShapes = ['circle', 'triangle', 'cross', 'square', 'star'];
+            const shapeToCall = validShapes.includes(chosenShape) ? chosenShape : 'circle';
+            room.calledShape = shapeToCall;
+            room.turn = opponent;
+            room.lastAction = `${username} played WHOT 20 and called ${shapeToCall.toUpperCase()}!`;
+        } else if (card.number === 1) {
+            room.turn = username;
+            room.lastAction = `${username} played HOLD ON (1)! ${username} plays again!`;
+        } else if (card.number === 8) {
+            room.turn = username;
+            room.lastAction = `${username} played SUSPENSION (8)! ${opponent} is skipped!`;
+        } else if (card.number === 2) {
+            room.pendingPick = 2;
+            room.turn = opponent;
+            room.lastAction = `${username} played PICK TWO (2)! ${opponent} must draw 2 cards!`;
+        } else if (card.number === 14) {
+            room.pendingPick = 1;
+            room.turn = opponent;
+            room.lastAction = `${username} played GENERAL MARKET (14)! ${opponent} must draw 1 card!`;
+        } else {
+            room.turn = opponent;
+            room.lastAction = `${username} played ${card.shape.toUpperCase()} ${card.number}.`;
+        }
+
         emitWhotState(roomId);
     });
 
@@ -869,114 +1095,102 @@ io.on('connection', (socket) => {
         if (room.turn !== username) return;
 
         const opponent = room.players.find(p => p !== username);
+        const drawCount = room.pendingPick > 0 ? room.pendingPick : 1;
+
+        for (let i = 0; i < drawCount; i++) {
+            if (room.deck.length === 0 && room.discardPile.length > 1) {
+                const currentTop = room.discardPile.pop();
+                room.deck = room.discardPile.splice(0);
+                room.discardPile = [currentTop];
+                for (let j = room.deck.length - 1; j > 0; j--) {
+                    const k = Math.floor(Math.random() * (j + 1));
+                    [room.deck[j], room.deck[k]] = [room.deck[k], room.deck[j]];
+                }
+            }
+            if (room.deck.length > 0) {
+                room.hands[username].push(room.deck.pop());
+            }
+        }
+
+        room.pendingPick = 0;
+        room.turn = opponent;
+        room.lastAction = `${username} drew ${drawCount} card${drawCount > 1 ? 's' : ''} from the market.`;
+
+        emitWhotState(roomId);
+    });
+
+    socket.on('whot_turn_timeout', (data) => {
+        const { roomId, username } = data;
+        const room = activeRooms[roomId];
+        if (!room || room.gameType !== 'whot') return;
+        if (room.turn !== username) return;
+
+        const opponent = room.players.find(p => p !== username);
         if (room.deck.length > 0) {
             room.hands[username].push(room.deck.pop());
         }
         room.turn = opponent;
-        room.lastAction = `${username} drew a card from the market.`;
+        room.lastAction = `⏱️ ${username} timed out! Auto-drew 1 card. Turn passed to ${opponent}.`;
         emitWhotState(roomId);
     });
 
     // ==========================================
-    // NAIJA 2-DICE LUDO BLITZ ENGINE
+    // LUDO BLITZ GAME ENGINE
     // ==========================================
-    socket.on('ludo_roll_two_dice', (data) => {
+    socket.on('ludo_roll_dice', (data) => {
         const { roomId, username } = data;
         const room = activeRooms[roomId];
         if (!room || room.gameType !== 'ludo') return;
+        if (room.turn !== username) return;
 
-        const dice1 = Math.floor(Math.random() * 6) + 1;
-        const dice2 = Math.floor(Math.random() * 6) + 1;
-        room.lastDice1 = dice1;
-        room.lastDice2 = dice2;
+        const diceRoll = Math.floor(Math.random() * 6) + 1;
+        room.lastDice = diceRoll;
 
-        io.to(roomId).emit('ludo_dice_rolled', { dice1, dice2 });
-        io.to(roomId).emit('ludo_action_log', { message: `${username} rolled [${dice1}, ${dice2}] 🎲🎲` });
+        socket.emit('ludo_dice_rolled', { diceRoll });
+        io.to(roomId).emit('ludo_action_log', { message: `${username} rolled a ${diceRoll} 🎲` });
     });
 
     socket.on('ludo_move_token', async (data) => {
         const { roomId, username, tokenIndex } = data;
         const room = activeRooms[roomId];
         if (!room || room.gameType !== 'ludo') return;
+        if (room.turn !== username) return;
 
         const opponent = room.players.find(p => p !== username);
-        const tokens = room.positions[username];
-        const d1 = room.lastDice1;
-        const d2 = room.lastDice2;
+        const playerTokens = room.positions[username];
+        const dice = room.lastDice || 1;
 
-        if (d1 === null || d2 === null) {
-            socket.emit('ludo_action_log', { message: '❌ Please roll the two dice first!' });
-            return;
+        playerTokens[tokenIndex] += dice;
+        if (playerTokens[tokenIndex] > 33) {
+            playerTokens[tokenIndex] = 33;
         }
 
-        const totalMove = d1 + d2;
-
-        if (tokens[tokenIndex] === -1) {
-            if (d1 === 6 || d2 === 6 || totalMove === 6) {
-                tokens[tokenIndex] = 0;
-                room.lastAction = `🚀 ${username} brought Token #${tokenIndex + 1} OUT of the family base! 🎉`;
-            } else {
-                socket.emit('ludo_action_log', { message: '❌ You need a 6 on either die to come out!' });
-                return;
-            }
-        } else {
-            tokens[tokenIndex] += totalMove;
-            if (tokens[tokenIndex] > 57) tokens[tokenIndex] = 57;
-            room.lastAction = `${username} moved token #${tokenIndex + 1} by ${totalMove} steps.`;
-        }
-
-        if (tokens.every(pos => pos === 57)) {
+        if (playerTokens.every(pos => pos === 33)) {
             delete activeRooms[roomId];
             try {
-                const payoutInfo = await settleMatchWinner(room, username, 'Naija Ludo');
-                io.to(roomId).emit('ludo_game_over', { 
-                    winner: username, 
+                const payoutInfo = await settleMatchWinner(room, username, 'Ludo Blitz');
+                io.to(roomId).emit('ludo_game_over', {
+                    winner: username,
                     netWinnings: payoutInfo.netWinnings,
                     feeCharged: payoutInfo.feeCharged,
                     commissionPercent: payoutInfo.commissionPercent
                 });
             } catch (err) {
-                console.error(err);
+                console.error('Error settling Ludo winner:', err);
             } finally {
                 broadcastLoungeStats();
             }
             return;
         }
 
-        room.lastDice1 = null;
-        room.lastDice2 = null;
         room.turn = opponent;
+        room.lastDice = null;
 
-        emitLudoState(roomId);
-    });
-
-    // ==========================================
-    // PRO SNOOKER ENGINE
-    // ==========================================
-    socket.on('snooker_take_shot', async (data) => {
-        const { roomId, username } = data;
-        const room = activeRooms[roomId];
-        if (!room || room.gameType !== 'snooker') return;
-
-        room.scores[username] = (room.scores[username] || 0) + 1;
-        if (room.scores[username] >= 3) {
-            delete activeRooms[roomId];
-            try {
-                const payoutInfo = await settleMatchWinner(room, username, 'Pro Snooker');
-                io.to(roomId).emit('snooker_game_over', { 
-                    winner: username, 
-                    netWinnings: payoutInfo.netWinnings,
-                    feeCharged: payoutInfo.feeCharged,
-                    commissionPercent: payoutInfo.commissionPercent
-                });
-            } catch (err) {
-                console.error(err);
-            } finally {
-                broadcastLoungeStats();
-            }
-            return;
-        }
-        io.to(roomId).emit('snooker_state_update', { scores: room.scores, turn: username, lastAction: `${username} potted a ball!` });
+        io.to(roomId).emit('ludo_state_update', {
+            positions: room.positions,
+            turn: room.turn,
+            lastAction: `${username} moved token #${tokenIndex + 1}. Now ${opponent}'s turn!`
+        });
     });
 
     socket.on('leave_queue', (data) => {
@@ -985,27 +1199,181 @@ io.on('connection', (socket) => {
         broadcastLoungeStats();
     });
 
+    // ==========================================
+    // ADMIN & SUPPORT HANDLERS
+    // ==========================================
     socket.on('get_house_revenue', async (callback) => {
         try {
             const sumRes = await pool.query('SELECT SUM(amount) AS total FROM admin_income_logs');
             let totalRevenue = sumRes.rows[0].total ? parseFloat(sumRes.rows[0].total) : 0;
-            const logsRes = await pool.query(`SELECT type, description, amount, TO_CHAR(created_at, 'YYYY-MM-DD HH12:MI:SS AM') AS date FROM admin_income_logs ORDER BY id DESC LIMIT 50`);
-            callback({ revenue: totalRevenue, incomeLogs: logsRes.rows, withdrawalLogs: withdrawalLogs });
+
+            const logsRes = await pool.query(`
+                SELECT type, description, amount, 
+                TO_CHAR(created_at, 'YYYY-MM-DD HH12:MI:SS AM') AS date 
+                FROM admin_income_logs ORDER BY id DESC LIMIT 50
+            `);
+            
+            callback({
+                revenue: totalRevenue,
+                incomeLogs: logsRes.rows,
+                withdrawalLogs: withdrawalLogs
+            });
         } catch (err) {
+            console.error('Error fetching house revenue from DB:', err);
             callback({ revenue: 0, incomeLogs: [], withdrawalLogs: [] });
         }
     });
 
     socket.on('admin_withdraw', async (data, callback) => {
-        callback({ success: true, message: 'Withdrawn successfully' });
+        const { amount, bankName, accountNumber } = data;
+        try {
+            const sumRes = await pool.query('SELECT SUM(amount) AS total FROM admin_income_logs');
+            let currentRevenue = sumRes.rows[0].total ? parseFloat(sumRes.rows[0].total) : 0;
+
+            if (amount > currentRevenue) {
+                callback({ success: false, message: 'Insufficient house revenue balance.' });
+                return;
+            }
+
+            const bankListStr = await makeHttpsRequest({
+                hostname: 'api.paystack.co',
+                path: '/bank?country=nigeria',
+                method: 'GET',
+                headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` }
+            });
+            const bankList = JSON.parse(bankListStr);
+            const bankObj = bankList.data.find(b => b.name === bankName);
+            
+            if (!bankObj) {
+                return callback({ success: false, message: 'Invalid bank name recognized by Paystack.' });
+            }
+
+            const recipientStr = await makeHttpsRequest({
+                hostname: 'api.paystack.co',
+                path: '/transferrecipient',
+                method: 'POST',
+                headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`, 'Content-Type': 'application/json' }
+            }, JSON.stringify({
+                type: 'nuban',
+                name: 'Admin Payout',
+                account_number: accountNumber,
+                bank_code: bankObj.code,
+                currency: 'NGN'
+            }));
+            
+            const recipientData = JSON.parse(recipientStr);
+            if (!recipientData.status) {
+                return callback({ success: false, message: 'Paystack Account Error: ' + recipientData.message });
+            }
+            const recipientCode = recipientData.data.recipient_code;
+
+            const transferStr = await makeHttpsRequest({
+                hostname: 'api.paystack.co',
+                path: '/transfer',
+                method: 'POST',
+                headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`, 'Content-Type': 'application/json' }
+            }, JSON.stringify({
+                source: 'balance',
+                amount: amount * 100,
+                recipient: recipientCode,
+                reason: 'Admin Platform Withdrawal'
+            }));
+            
+            const transferData = JSON.parse(transferStr);
+
+            if (!transferData.status) {
+                return callback({ success: false, message: 'Transfer Failed: ' + transferData.message });
+            }
+
+            await pool.query(
+                'INSERT INTO admin_income_logs (type, description, amount) VALUES ($1, $2, $3)',
+                ['WITHDRAWAL', `Withdrawn to ${bankName} (${accountNumber}) via API`, -amount]
+            );
+
+            withdrawalLogs.unshift({
+                amount,
+                bankName,
+                accountNumber,
+                date: new Date().toLocaleString()
+            });
+
+            const updatedSumRes = await pool.query('SELECT SUM(amount) AS total FROM admin_income_logs');
+            let newRevenue = updatedSumRes.rows[0].total ? parseFloat(updatedSumRes.rows[0].total) : 0;
+
+            callback({ success: true, message: `Successfully withdrew ₦${amount.toLocaleString()} to ${bankName}. Check your bank app!`, newRevenue });
+        } catch (err) {
+            console.error('Error processing admin withdrawal:', err);
+            callback({ success: false, message: 'Server error processing live Paystack withdrawal.' });
+        }
+    });
+
+    socket.on('submit_support_ticket', (data, callback) => {
+        const ticketId = 'TICK_' + Math.floor(1000 + Math.random() * 9000);
+        supportTickets.unshift({
+            id: ticketId,
+            username: data.username,
+            category: data.category,
+            message: data.message,
+            status: 'Pending',
+            date: new Date().toLocaleString()
+        });
+        callback({ success: true, ticketId });
+    });
+
+    socket.on('get_support_tickets', (callback) => {
+        callback({ tickets: supportTickets });
+    });
+
+    socket.on('resolve_ticket', (ticketId, callback) => {
+        const ticket = supportTickets.find(t => t.id === ticketId);
+        if (ticket) {
+            ticket.status = 'Resolved';
+            callback({ success: true });
+        } else {
+            callback({ success: false });
+        }
     });
 
     socket.on('send_chat_message', (data) => {
-        io.emit('receive_chat_message', { username: data.username, message: data.message, time: new Date().toLocaleTimeString() });
+        const { username, message } = data;
+        if (!username || !message || message.trim() === '') return;
+
+        const chatPayload = {
+            username: username,
+            message: message.trim(),
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+
+        io.emit('receive_chat_message', chatPayload);
     });
 
     socket.on('disconnect', async () => {
         waitingPlayers = waitingPlayers.filter(p => p.socketId !== socket.id);
+
+        if (socket.authUsername) {
+            for (const [roomId, room] of Object.entries(activeRooms)) {
+                if (room.gameType === 'whot' && room.players.includes(socket.authUsername)) {
+                    const winner = room.players.find(p => p !== socket.authUsername);
+                    delete activeRooms[roomId];
+                    try {
+                        const payoutInfo = await settleMatchWinner(room, winner, 'Naija Whot (Opponent Disconnected)');
+                        io.to(roomId).emit('whot_game_over', {
+                            winner,
+                            reason: 'opponent_disconnected',
+                            netWinnings: payoutInfo.netWinnings,
+                            feeCharged: payoutInfo.feeCharged,
+                            commissionPercent: payoutInfo.commissionPercent
+                        });
+                    } catch (e) {
+                        console.error('Error settling disconnect forfeit:', e);
+                    }
+                }
+            }
+        }
+
+        if (socket.authUsername && activeUserSessions[socket.authUsername] === socket.id) {
+            delete activeUserSessions[socket.authUsername];
+        }
         io.emit('update_online_count', { count: io.engine.clientsCount });
         broadcastLoungeStats();
     });
