@@ -2446,7 +2446,6 @@
         selectedStake = stakeAmount;
         gameActive = false;
         switchScreen('whot-game-screen');
-        document.getElementById('whot-active-title').innerText = `${roomTitle} (₦${stakeAmount.toLocaleString()})`;
         document.getElementById('whot-opponent-name').innerText = 'Searching...';
         document.getElementById('whot-opponent-cards').innerText = '0';
         document.getElementById('whot-turn-banner').innerText = '⏳ Waiting for opponent to join table...';
@@ -2562,7 +2561,7 @@
         pendingWhot20CardIndex = null;
     }
 
-    function drawWhotCard() {
+    function `drawWhotCard`() {
         if (!gameActive || !isMyTurn) return;
         clearInterval(whotTurnInterval);
         socket.emit('whot_draw_card', {
