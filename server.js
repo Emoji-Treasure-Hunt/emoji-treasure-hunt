@@ -183,56 +183,75 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'money.html'));
 });
 
-app.post('/initialize-payment', (req, res) => {
-    const { email, amount, username } = req.body;
+app.post('/initialize-payment', async (req, res) => {
+    let { email, amount, username } = req.body;
 
-    if (!email || !amount) {
-        return res.status(400).json({ success: false, message: 'Email and amount are required.' });
+    if (!amount) {
+        return res.status(400).json({ success: false, message: 'Amount is required.' });
     }
 
-    const params = JSON.stringify({
-        email: email,
-        amount: amount * 100,
-        metadata: {
-            username: username || 'unknown'
+    try {
+        // Force database lookup using the username to get the correct registered email
+        if (username) {
+            const userRes = await pool.query('SELECT email FROM users WHERE username = $1', [username]);
+            if (userRes.rows.length > 0 && userRes.rows[0].email) {
+                email = userRes.rows[0].email;
+            }
         }
-    });
-
-    const options = {
-        hostname: 'api.paystack.co',
-        port: 443,
-        path: '/transaction/initialize',
-        method: 'POST',
-        headers: {
-            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-            'Content-Type': 'application/json'
+        
+        // Final fallback to your primary personal email if nothing else is found
+        if (!email || email.includes('arcade.com')) {
+            email = 'onyejepeter1@gmail.com';
         }
-    };
 
-    const reqPaystack = https.request(options, apiRes => {
-        let data = '';
-        apiRes.on('data', chunk => data += chunk);
-        apiRes.on('end', () => {
-            try {
-                const response = JSON.parse(data);
-                if (response.status) {
-                    res.json({ success: true, data: response.data });
-                } else {
-                    res.status(400).json({ success: false, message: response.message || 'Initialization failed' });
-                }
-            } catch (e) {
-                res.status(500).json({ success: false, message: 'Invalid response from Paystack API' });
+        const params = JSON.stringify({
+            email: email,
+            amount: amount * 100,
+            metadata: {
+                username: username || 'unknown'
             }
         });
-    });
 
-    reqPaystack.on('error', error => {
-        console.error(error);
-        res.status(500).json({ success: false, message: 'Server connection error to Paystack' });
-    });
+        const options = {
+            hostname: 'api.paystack.co',
+            port: 443,
+            path: '/transaction/initialize',
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+                'Content-Type': 'application/json'
+            }
+        };
 
-    reqPaystack.write(params);
-    reqPaystack.end();
+        const reqPaystack = https.request(options, apiRes => {
+            let data = '';
+            apiRes.on('data', chunk => data += chunk);
+            apiRes.on('end', () => {
+                try {
+                    const response = JSON.parse(data);
+                    if (response.status) {
+                        res.json({ success: true, data: response.data });
+                    } else {
+                        res.status(400).json({ success: false, message: response.message || 'Initialization failed' });
+                    }
+                } catch (e) {
+                    res.status(500).json({ success: false, message: 'Invalid response from Paystack API' });
+                }
+            });
+        });
+
+        reqPaystack.on('error', error => {
+            console.error(error);
+            res.status(500).json({ success: false, message: 'Server connection error to Paystack' });
+        });
+
+        reqPaystack.write(params);
+        reqPaystack.end();
+
+    } catch (err) {
+        console.error('Error initializing payment:', err);
+        res.status(500).json({ success: false, message: 'Server error initializing payment' });
+    }
 });
 
 app.get('/get-banks', (req, res) => {
