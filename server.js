@@ -1,4 +1,4 @@
-const express = require('express');
+Const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
@@ -93,7 +93,7 @@ async function initDB() {
 initDB();
 
 // ==========================================
-// 1. SECURE PAYSTACK WEBHOOK ROUTE (USERNAME & EMAIL FALLBACK)
+// 1. SECURE PAYSTACK WEBHOOK ROUTE
 // ==========================================
 app.post('/paystack-webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     const paystackSignature = req.headers['x-paystack-signature'];
@@ -111,8 +111,6 @@ app.post('/paystack-webhook', express.raw({ type: 'application/json' }), async (
             const userEmail = paymentData.customer.email;
             const amountPaid = paymentData.amount / 100;
             const reference = paymentData.reference;
-            const metadata = paymentData.metadata || {};
-            const targetUsername = metadata.username;
 
             const client = await pool.connect();
             try {
@@ -125,38 +123,18 @@ app.post('/paystack-webhook', express.raw({ type: 'application/json' }), async (
                     return res.status(200).send('Webhook already processed');
                 }
 
-                let userCheck;
-                if (targetUsername) {
-                    userCheck = await client.query('SELECT email FROM users WHERE username = $1', [targetUsername]);
-                }
-                
-                if (!userCheck || userCheck.rows.length === 0) {
-                    userCheck = await client.query('SELECT email FROM users WHERE email = $1', [userEmail]);
-                }
+                await client.query(
+                    'UPDATE users SET balance = balance + $1 WHERE email = $2',
+                    [amountPaid, userEmail]
+                );
 
-                if (!userCheck || userCheck.rows.length === 0) {
-                    userCheck = await client.query('SELECT email FROM users ORDER BY id ASC LIMIT 1');
-                }
+                await client.query(
+                    'INSERT INTO transactions (email, type, amount, description, reference) VALUES ($1, $2, $3, $4, $5)',
+                    [userEmail, 'DEPOSIT', amountPaid, `Funded via Paystack (Ref: ${reference})`, reference]
+                );
 
-                if (userCheck && userCheck.rows.length > 0) {
-                    const matchedEmail = userCheck.rows[0].email;
-
-                    await client.query(
-                        'UPDATE users SET balance = balance + $1 WHERE email = $2',
-                        [amountPaid, matchedEmail]
-                    );
-
-                    await client.query(
-                        'INSERT INTO transactions (email, type, amount, description, reference) VALUES ($1, $2, $3, $4, $5)',
-                        [matchedEmail, 'DEPOSIT', amountPaid, `Funded via Paystack (Ref: ${reference})`, reference]
-                    );
-
-                    await client.query('COMMIT');
-                    console.log(`Verified & Saved to DB - Credited ₦${amountPaid} to account email: ${matchedEmail} (Ref: ${reference})`);
-                } else {
-                    await client.query('ROLLBACK');
-                    console.error(`Webhook error: Could not find any user account to credit for email ${userEmail}`);
-                }
+                await client.query('COMMIT');
+                console.log(`Verified & Saved to DB - Credited ₦${amountPaid} to ${userEmail} (Ref: ${reference})`);
             } catch (err) {
                 await client.query('ROLLBACK');
                 console.error('Database error processing webhook transaction:', err);
@@ -184,7 +162,7 @@ app.get('/', (req, res) => {
 });
 
 app.post('/initialize-payment', (req, res) => {
-    const { email, amount, username } = req.body;
+    const { email, amount } = req.body;
 
     if (!email || !amount) {
         return res.status(400).json({ success: false, message: 'Email and amount are required.' });
@@ -192,10 +170,7 @@ app.post('/initialize-payment', (req, res) => {
 
     const params = JSON.stringify({
         email: email,
-        amount: amount * 100,
-        metadata: {
-            username: username || 'unknown'
-        }
+        amount: amount * 100
     });
 
     const options = {
