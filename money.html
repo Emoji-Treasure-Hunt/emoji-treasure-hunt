@@ -551,15 +551,15 @@
                 <h3>🎲 Ludo Blitz</h3>
                 <p>2-Token quick dash Ludo battle.</p>
             </div>
-            <button class="group-btn vip-btn">Play</button>
+            <button class="group-btn vip-btn">Coming Soon</button>
         </div>
 
         <div class="group-card vip-card" onclick="selectGame('snooker')" style="cursor: pointer;">
             <div class="group-info">
-                <h3>🎱 Pro Snooker (Coming Soon)</h3>
+                <h3>🎱 Pro Snooker</h3>
                 <p>Quick 8-Ball pool physics duel.</p>
             </div>
-            <button class="group-btn vip-btn">Soon</button>
+            <button class="group-btn vip-btn">Coming Soon</button>
         </div>
     </div>
 
@@ -716,98 +716,33 @@
         </div>
     </div>
 
-    <!-- LUDO BLITZ LOBBY SCREEN -->
-    <div id="ludo-lobby-screen" class="screen-section">
-        <h1><span class="app-logo">🎲</span> Ludo Blitz Arena</h1>
-        <div class="subtitle">Fast-Paced 2-Token Quick Dash</div>
+    <!-- PLAYER PROFILE SCREEN -->
+    <div id="profile-screen" class="screen-section">
+        <h1>👤 Player Profile</h1>
+        <div class="subtitle">Your Arcade Career & Statistics</div>
 
-        <div class="user-panel">
-            <span>👤 <strong id="ludo-display-user"></strong></span>
-            <button class="btn-secondary" onclick="switchScreen('game-hub-screen')" style="margin-top: 0; padding: 6px 12px; font-size: 0.8rem;">← Arcade Lobby</button>
-        </div>
-
-        <p style="font-size: 0.85rem; color: #94a3b8; text-align: left; margin-bottom: 10px; text-transform: uppercase; font-family:'Orbitron',sans-serif;">Select Ludo Stake Tier:</p>
-
-        <div class="group-card">
-            <div class="group-info">
-                <h3>🎲 Ludo Micro Dash</h3>
-                <p>Stake: ₦100 | 2 Players | Payout: ₦200</p>
-                <p id="ludo-stat-100" style="color: #00ff66; margin-top: 2px; font-size: 0.8rem;">🟢 0 Active | ⏳ 0 Waiting</p>
+        <div class="wallet-card">
+            <div class="subtitle" style="margin-bottom: 4px;">Username</div>
+            <div id="profile-username" style="font-family: 'Orbitron', sans-serif; font-size: 1.5rem; color: var(--neon-blue); margin-bottom: 15px;">-</div>
+            
+            <div style="display: flex; justify-content: space-around; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
+                <div>
+                    <div style="font-size: 0.75rem; color: #94a3b8;">WALLET BALANCE</div>
+                    <div id="profile-balance" style="font-family: 'Orbitron', sans-serif; font-size: 1.1rem; color: var(--neon-green);">₦0.00</div>
+                </div>
+                <div>
+                    <div style="font-size: 0.75rem; color: #94a3b8;">TOTAL WINS</div>
+                    <div id="profile-wins" style="font-family: 'Orbitron', sans-serif; font-size: 1.1rem; color: var(--neon-gold);">0</div>
+                </div>
             </div>
-            <button class="group-btn" onclick="joinLudoQueue(100, 'Ludo Micro Dash')">Play</button>
         </div>
 
-        <div class="group-card">
-            <div class="group-info">
-                <h3>🥉 Ludo Rookie Sprint</h3>
-                <p>Stake: ₦500 | 2 Players | Payout: ₦1,000</p>
-                <p id="ludo-stat-500" style="color: #00ff66; margin-top: 2px; font-size: 0.8rem;">🟢 0 Active | ⏳ 0 Waiting</p>
-            </div>
-            <button class="group-btn" onclick="joinLudoQueue(500, 'Ludo Rookie Sprint')">Play</button>
-        </div>
-
-        <div class="group-card">
-            <div class="group-info">
-                <h3>🥈 Ludo Pro Dash</h3>
-                <p>Stake: ₦1,000 | 2 Players | Payout: ₦2,000</p>
-                <p id="ludo-stat-1000" style="color: #00ff66; margin-top: 2px; font-size: 0.8rem;">🟢 0 Active | ⏳ 0 Waiting</p>
-            </div>
-            <button class="group-btn" onclick="joinLudoQueue(1000, 'Ludo Pro Dash')">Play</button>
-        </div>
-
-        <div class="group-card vip-card">
-            <div class="group-info">
-                <h3>🥇 Ludo Gold Chamber</h3>
-                <p>Stake: ₦5,000 | 2 Players | Payout: ₦10,000</p>
-                <p id="ludo-stat-5000" style="color: var(--neon-gold); margin-top: 2px; font-size: 0.8rem;">🟢 0 Active | ⏳ 0 Waiting</p>
-            </div>
-            <button class="group-btn vip-btn" onclick="joinLudoQueue(5000, 'Ludo Gold Chamber')">Play</button>
-        </div>
-
-        <div class="group-card vip-card">
-            <div class="group-info">
-                <h3>💎 Ludo Diamond Arena</h3>
-                <p>Stake: ₦10,000 | 2 Players | Payout: ₦20,000</p>
-                <p id="ludo-stat-10000" style="color: var(--neon-gold); margin-top: 2px; font-size: 0.8rem;">🟢 0 Active | ⏳ 0 Waiting</p>
-            </div>
-            <button class="group-btn vip-btn" onclick="joinLudoQueue(10000, 'Ludo Diamond Arena')">Play</button>
-        </div>
-
-        <div class="group-card vip-card">
-            <div class="group-info">
-                <h3>👑 Ludo Executive Lounge</h3>
-                <p>Stake: ₦25,000 | 2 Players | Payout: ₦50,000</p>
-                <p id="ludo-stat-25000" style="color: var(--neon-gold); margin-top: 2px; font-size: 0.8rem;">🟢 0 Active | ⏳ 0 Waiting</p>
-            </div>
-            <button class="group-btn vip-btn" onclick="joinLudoQueue(25000, 'Ludo Executive Lounge')">Play</button>
-        </div>
-    </div>
-
-    <!-- LUDO ACTIVE GAME BOARD SCREEN -->
-    <div id="ludo-game-screen" class="screen-section">
-        <h1 id="ludo-active-title">🎲 Ludo Blitz</h1>
-        <div class="user-panel">
-            <span>⚔️ Rival: <strong id="ludo-opponent-name">Searching...</strong></span>
-            <button class="logout-btn" onclick="leaveLudoGame()">Exit</button>
-        </div>
-
-        <div class="turn-indicator-box" id="ludo-turn-banner">⏳ Searching for Ludo opponent...</div>
-        
-        <div style="background: rgba(0,0,0,0.4); padding: 20px; border-radius: 12px; margin-bottom: 15px; border: 1px solid var(--neon-blue);">
-            <div id="ludo-dice-box" style="font-size: 2.5rem; margin-bottom: 10px;">🎲 -</div>
-            <button class="btn btn-success" id="ludo-roll-btn" onclick="rollLudoDice()" disabled style="opacity: 0.5;">Roll Dice</button>
-        </div>
-
-        <div style="display: flex; gap: 15px; justify-content: center; margin-bottom: 15px;">
-            <button class="group-btn" onclick="moveLudoToken(0)">Move Token #1</button>
-            <button class="group-btn" onclick="moveLudoToken(1)">Move Token #2</button>
-        </div>
-        <div id="ludo-action-log" style="font-size: 0.85rem; color: var(--neon-gold);"></div>
+        <button class="btn btn-secondary" onclick="switchScreen('game-hub-screen')">Back to Arcade Hub</button>
     </div>
 
     <!-- NAIJA WHOT ACTIVE GAME SCREEN -->
     <div id="whot-game-screen" class="screen-section">
-        <h1 id="whot-active-title">🃏 Naija Whot 1v1</h1>
+        <h1><span class="app-logo">🃏</span> Naija Whot 1v1</h1>
         <div class="user-panel">
             <span>⚔️ Rival: <strong id="whot-opponent-name">Searching...</strong> (<span id="whot-opponent-cards">0</span> 🃏)</span>
             <button class="logout-btn" onclick="leaveWhotGame()">Exit</button>
@@ -988,6 +923,8 @@
         <div class="wallet-card">
             <div class="subtitle" style="margin-bottom: 5px;">Available Balance</div>
             <div style="font-size: 1.8rem; color: var(--neon-blue); font-weight: bold;" id="cashier-wallet-balance">₦0.00</div>
+            <!-- Manual Sync / Refresh Balance Button -->
+            <button class="btn btn-secondary" onclick="updateLobbyWallet()" style="margin-top: 8px; padding: 8px; font-size: 0.8rem;">🔄 Sync Balance from Database</button>
         </div>
 
         <div class="wallet-actions">
@@ -1128,6 +1065,8 @@
         '💣', '🍌', '👻', '💀', '🐸', '💩', '🧊', '🌵', '🍅', '🧩', '🪵', '🌀'
     ];
 
+    function playSound(type) {}
+
     socket.on('connect', () => {
         console.log("Connected to the game server successfully!");
         loadAllBanks();
@@ -1148,7 +1087,7 @@
     });
 
     socket.on('lounge_stats_update', (data) => {
-        const { waitingCounts, activeCounts, whotWaitingCounts, whotActiveCounts, ludoWaitingCounts, ludoActiveCounts } = data;
+        const { waitingCounts, activeCounts, whotWaitingCounts, whotActiveCounts } = data;
         const stakeTiers = [100, 500, 1000, 5000, 10000, 25000];
         
         stakeTiers.forEach(stake => {
@@ -1165,13 +1104,6 @@
             if (wStatEl) {
                 wStatEl.innerHTML = `🟢 ${wActive} Active | ⏳ ${wWaiting} Waiting`;
             }
-
-            const lWaiting = ludoWaitingCounts && ludoWaitingCounts[stake] ? ludoWaitingCounts[stake] : 0;
-            const lActive = ludoActiveCounts && ludoActiveCounts[stake] ? ludoActiveCounts[stake] : 0;
-            const lStatEl = document.getElementById(`ludo-stat-${stake}`);
-            if (lStatEl) {
-                lStatEl.innerHTML = `🟢 ${lActive} Active | ⏳ ${lWaiting} Waiting`;
-            }
         });
     });
 
@@ -1185,11 +1117,9 @@
             const hubUser = document.getElementById('hub-display-user');
             const lobbyUser2 = document.getElementById('lobby-display-user-2');
             const whotUser = document.getElementById('whot-display-user');
-            const ludoUser = document.getElementById('ludo-display-user');
             if (hubUser) hubUser.innerText = savedUser;
             if (lobbyUser2) lobbyUser2.innerText = savedUser;
             if (whotUser) whotUser.innerText = savedUser;
-            if (ludoUser) ludoUser.innerText = savedUser;
             
             updateLobbyWallet();
 
@@ -1208,11 +1138,18 @@
             switchScreen('whot-lobby-screen');
             updateLobbyWallet();
         } else if (gameId === 'ludo') {
-            switchScreen('ludo-lobby-screen');
-            updateLobbyWallet();
-        } else {
-            alert("🎱 Pro Snooker launching next week! Jump into Ludo, Whot, or Treasure Hunt right now.");
+            alert("Ludo Blitz launching soon! Jump into whot or emoji treasure hunt right now.");
+        } else if (gameId === 'snooker') {
+            alert("Pro Snooker launching soon! Jump into whot or emoji treasure hunt right now.");
         }
+    }
+
+    function showProfile() {
+        switchScreen('profile-screen');
+        let userObj = getCurrentUserObj();
+        document.getElementById('profile-username').innerText = currentUser;
+        document.getElementById('profile-balance').innerText = `₦${userObj.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
+        document.getElementById('profile-wins').innerText = userObj.totalWins || 0;
     }
 
     function joinGameQueue(stakeAmount, groupName) {
@@ -1401,6 +1338,10 @@
             document.getElementById('message').innerHTML = `⏱️ Match timed out! It's a draw. Your ₦${selectedStake.toLocaleString()} stake has been refunded.`;
             document.getElementById('turn-indicator').innerText = "Match Draw (Refunded)";
         } else if (data.winner === currentUsername) {
+            let userObj = getCurrentUserObj();
+            userObj.totalWins = (userObj.totalWins || 0) + 1;
+            saveUserData(userObj);
+
             const feeText = data.feeCharged ? `₦${data.feeCharged.toLocaleString()} (${data.commissionPercent}% commission)` : `commission`;
             document.getElementById('message').innerHTML = `🎉 Congratulations! You won ₦${data.netWinnings.toLocaleString()} after ${feeText} was deducted.`;
             document.getElementById('turn-indicator').innerHTML = `<strong style="color: #00ff66;">🎉 Victory! You Won!</strong>`;
@@ -2096,7 +2037,6 @@
         document.getElementById('hub-display-user').innerText = username;
         document.getElementById('lobby-display-user-2').innerText = username;
         document.getElementById('whot-display-user').innerText = username;
-        document.getElementById('ludo-display-user').innerText = username;
         updateLobbyWallet();
 
         const adminMenuItem = document.getElementById('admin-menu-item');
@@ -2219,7 +2159,7 @@
         fetch('/initialize-payment', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: userEmail, amount: amount })
+            body: JSON.stringify({ email: userEmail, amount: amount, username: currentUser })
         })
         .then(res => res.json())
         .then(result => {
@@ -2478,11 +2418,11 @@
     }
 
     // ==========================================
-    // NAIJA WHOT CLIENT LOGIC (WITH 8s TIMER)
+    // NAIJA WHOT CLIENT LOGIC (WITH 15s TIMER)
     // ==========================================
     let pendingWhot20CardIndex = null;
     let whotTurnInterval = null;
-    let whotSecondsLeft = 8;
+    let whotSecondsLeft = 15;
 
     const shapeSymbols = {
         circle: '●',
@@ -2533,7 +2473,7 @@
             startWhotTimer();
             turnBanner.innerHTML = state.pendingPick > 0
                 ? `⚠️ <strong style="color:#facc15;">TAP MARKET TO DRAW ${state.pendingPick} CARDS!</strong>`
-                : `👉 <strong style="color:#00ff66;">YOUR TURN! (8s left)</strong>`;
+                : `👉 <strong style="color:#00ff66;">YOUR TURN! (${whotSecondsLeft}s left)</strong>`;
             turnBanner.style.borderColor = '#00ff66';
         } else {
             clearInterval(whotTurnInterval);
@@ -2573,7 +2513,7 @@
 
     function startWhotTimer() {
         clearInterval(whotTurnInterval);
-        whotSecondsLeft = 8;
+        whotSecondsLeft = 15;
         const turnBanner = document.getElementById('whot-turn-banner');
 
         whotTurnInterval = setInterval(() => {
@@ -2640,6 +2580,10 @@
         clearInterval(whotTurnInterval);
         const turnBanner = document.getElementById('whot-turn-banner');
         if (data.winner === currentUser) {
+            let userObj = getCurrentUserObj();
+            userObj.totalWins = (userObj.totalWins || 0) + 1;
+            saveUserData(userObj);
+
             turnBanner.innerHTML = `<strong style="color:#00ff66;">🎉 VICTORY! YOU WON ₦${data.netWinnings.toLocaleString()}!</strong>`;
             document.getElementById('whot-action-log').innerText = `Credited to your wallet (after ${data.commissionPercent}% fee).`;
         } else {
@@ -2659,80 +2603,6 @@
             selectedStake = 0;
         }
         switchScreen('whot-lobby-screen');
-        updateLobbyWallet();
-    }
-
-    // ==========================================
-    // LUDO BLITZ CLIENT LOGIC
-    // ==========================================
-    function joinLudoQueue(stakeAmount, roomTitle) {
-        const username = localStorage.getItem('emoji_current_user_secure');
-        if (!username) return alert("Please log in first!");
-
-        let userObj = getCurrentUserObj();
-        if (userObj.balance < stakeAmount) {
-            return alert(`Insufficient balance! Need at least ₦${stakeAmount.toLocaleString()}.`);
-        }
-
-        selectedStake = stakeAmount;
-        gameActive = false;
-        switchScreen('ludo-game-screen');
-        document.getElementById('ludo-active-title').innerText = `${roomTitle} (₦${stakeAmount.toLocaleString()})`;
-        document.getElementById('ludo-turn-banner').innerText = '⏳ Waiting for Ludo opponent...';
-
-        socket.emit('join_queue', {
-            username,
-            stake: stakeAmount,
-            gameType: 'ludo'
-        });
-    }
-
-    socket.on('ludo_state_update', (state) => {
-        gameActive = true;
-        isMyTurn = (state.turn === currentUser);
-
-        document.getElementById('ludo-action-log').innerText = state.lastAction || '';
-        document.getElementById('ludo-roll-btn').disabled = !isMyTurn;
-        document.getElementById('ludo-roll-btn').style.opacity = isMyTurn ? '1' : '0.5';
-
-        const turnBanner = document.getElementById('ludo-turn-banner');
-        turnBanner.innerHTML = isMyTurn ? `👉 <strong style="color:#00ff66;">YOUR TURN TO ROLL!</strong>` : `⏳ <strong style="color:#ff003c;">OPPONENT'S TURN...</strong>`;
-    });
-
-    socket.on('ludo_action_log', (data) => {
-        document.getElementById('ludo-action-log').innerText = data.message;
-    });
-
-    function rollLudoDice() {
-        if (!gameActive || !isMyTurn) return;
-        socket.emit('ludo_roll_dice', { roomId: currentRoomId, username: currentUser });
-    }
-
-    socket.on('ludo_dice_rolled', (data) => {
-        document.getElementById('ludo-dice-box').innerText = `🎲 ${data.diceRoll}`;
-    });
-
-    function moveLudoToken(tokenIndex) {
-        if (!gameActive || !isMyTurn) return;
-        socket.emit('ludo_move_token', { roomId: currentRoomId, username: currentUser, tokenIndex });
-    }
-
-    socket.on('ludo_game_over', (data) => {
-        gameActive = false;
-        selectedStake = 0;
-        const turnBanner = document.getElementById('ludo-turn-banner');
-        if (data.winner === currentUser) {
-            turnBanner.innerHTML = `<strong style="color:#00ff66;">🎉 LUDO VICTORY! WON ₦${data.netWinnings.toLocaleString()}!</strong>`;
-        } else {
-            turnBanner.innerHTML = `<strong style="color:#ff003c;">❌ GAME OVER! ${data.winner} WON!</strong>`;
-        }
-        updateLobbyWallet();
-    });
-
-    function leaveLudoGame() {
-        if (gameActive) return alert("⚠️ Match in progress!");
-        if (selectedStake > 0) socket.emit('leave_queue', { username: currentUser });
-        switchScreen('ludo-lobby-screen');
         updateLobbyWallet();
     }
 </script>

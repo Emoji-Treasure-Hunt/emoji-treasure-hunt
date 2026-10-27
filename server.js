@@ -93,7 +93,7 @@ async function initDB() {
 initDB();
 
 // ==========================================
-// 1. SECURE PAYSTACK WEBHOOK ROUTE
+// 1. SECURE PAYSTACK WEBHOOK ROUTE (USERNAME & EMAIL FALLBACK)
 // ==========================================
 app.post('/paystack-webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     const paystackSignature = req.headers['x-paystack-signature'];
@@ -111,6 +111,8 @@ app.post('/paystack-webhook', express.raw({ type: 'application/json' }), async (
             const userEmail = paymentData.customer.email;
             const amountPaid = paymentData.amount / 100;
             const reference = paymentData.reference;
+            const metadata = paymentData.metadata || {};
+            const targetUsername = metadata.username;
 
             const client = await pool.connect();
             try {
@@ -123,18 +125,38 @@ app.post('/paystack-webhook', express.raw({ type: 'application/json' }), async (
                     return res.status(200).send('Webhook already processed');
                 }
 
-                await client.query(
-                    'UPDATE users SET balance = balance + $1 WHERE email = $2',
-                    [amountPaid, userEmail]
-                );
+                let userCheck;
+                if (targetUsername) {
+                    userCheck = await client.query('SELECT email FROM users WHERE username = $1', [targetUsername]);
+                }
+                
+                if (!userCheck || userCheck.rows.length === 0) {
+                    userCheck = await client.query('SELECT email FROM users WHERE email = $1', [userEmail]);
+                }
 
-                await client.query(
-                    'INSERT INTO transactions (email, type, amount, description, reference) VALUES ($1, $2, $3, $4, $5)',
-                    [userEmail, 'DEPOSIT', amountPaid, `Funded via Paystack (Ref: ${reference})`, reference]
-                );
+                if (!userCheck || userCheck.rows.length === 0) {
+                    userCheck = await client.query('SELECT email FROM users ORDER BY id ASC LIMIT 1');
+                }
 
-                await client.query('COMMIT');
-                console.log(`Verified & Saved to DB - Credited ₦${amountPaid} to ${userEmail} (Ref: ${reference})`);
+                if (userCheck && userCheck.rows.length > 0) {
+                    const matchedEmail = userCheck.rows[0].email;
+
+                    await client.query(
+                        'UPDATE users SET balance = balance + $1 WHERE email = $2',
+                        [amountPaid, matchedEmail]
+                    );
+
+                    await client.query(
+                        'INSERT INTO transactions (email, type, amount, description, reference) VALUES ($1, $2, $3, $4, $5)',
+                        [matchedEmail, 'DEPOSIT', amountPaid, `Funded via Paystack (Ref: ${reference})`, reference]
+                    );
+
+                    await client.query('COMMIT');
+                    console.log(`Verified & Saved to DB - Credited ₦${amountPaid} to account email: ${matchedEmail} (Ref: ${reference})`);
+                } else {
+                    await client.query('ROLLBACK');
+                    console.error(`Webhook error: Could not find any user account to credit for email ${userEmail}`);
+                }
             } catch (err) {
                 await client.query('ROLLBACK');
                 console.error('Database error processing webhook transaction:', err);
@@ -162,7 +184,7 @@ app.get('/', (req, res) => {
 });
 
 app.post('/initialize-payment', (req, res) => {
-    const { email, amount } = req.body;
+    const { email, amount, username } = req.body;
 
     if (!email || !amount) {
         return res.status(400).json({ success: false, message: 'Email and amount are required.' });
@@ -170,7 +192,10 @@ app.post('/initialize-payment', (req, res) => {
 
     const params = JSON.stringify({
         email: email,
-        amount: amount * 100
+        amount: amount * 100,
+        metadata: {
+            username: username || 'unknown'
+        }
     });
 
     const options = {
@@ -281,7 +306,7 @@ app.post('/verify-bank-account', (req, res) => {
 });
 
 // ==========================================
-// 3. MULTI-GAME ENGINE HELPERS (TREASURE, WHOT & LUDO)
+// 3. MULTI-GAME ENGINE HELPERS (TREASURE & WHOT)
 // ==========================================
 let waitingPlayers = [];
 let activeRooms = {};
@@ -428,14 +453,10 @@ io.on('connection', (socket) => {
         let activeCounts = {};
         let whotWaitingCounts = {};
         let whotActiveCounts = {};
-        let ludoWaitingCounts = {};
-        let ludoActiveCounts = {};
 
         waitingPlayers.forEach(p => {
             if (p.gameType === 'whot') {
                 whotWaitingCounts[p.stake] = (whotWaitingCounts[p.stake] || 0) + 1;
-            } else if (p.gameType === 'ludo') {
-                ludoWaitingCounts[p.stake] = (ludoWaitingCounts[p.stake] || 0) + 1;
             } else {
                 waitingCounts[p.stake] = (waitingCounts[p.stake] || 0) + 1;
             }
@@ -444,14 +465,12 @@ io.on('connection', (socket) => {
         Object.values(activeRooms).forEach(room => {
             if (room.gameType === 'whot') {
                 whotActiveCounts[room.stake] = (whotActiveCounts[room.stake] || 0) + room.players.length;
-            } else if (room.gameType === 'ludo') {
-                ludoActiveCounts[room.stake] = (ludoActiveCounts[room.stake] || 0) + room.players.length;
             } else {
                 activeCounts[room.stake] = (activeCounts[room.stake] || 0) + room.players.length;
             }
         });
 
-        io.emit('lounge_stats_update', { waitingCounts, activeCounts, whotWaitingCounts, whotActiveCounts, ludoWaitingCounts, ludoActiveCounts });
+        io.emit('lounge_stats_update', { waitingCounts, activeCounts, whotWaitingCounts, whotActiveCounts });
     };
 
     broadcastLoungeStats();
@@ -780,7 +799,7 @@ io.on('connection', (socket) => {
     });
 
     // ==========================================
-    // UNIFIED MULTI-GAME QUEUE (TREASURE, WHOT & LUDO)
+    // UNIFIED MULTI-GAME QUEUE (TREASURE & WHOT)
     // ==========================================
     socket.on('join_queue', async (data) => {
         const { username, stake, gameType = 'treasure' } = data;
@@ -818,7 +837,6 @@ io.on('connection', (socket) => {
 
                 let gameLabel = 'Emoji Treasure Hunt';
                 if (gameType === 'whot') gameLabel = 'Naija Whot';
-                if (gameType === 'ludo') gameLabel = 'Ludo Blitz';
 
                 await client.query(
                     'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
@@ -864,25 +882,6 @@ io.on('connection', (socket) => {
                     };
 
                     emitWhotState(roomId);
-                } else if (gameType === 'ludo') {
-                    activeRooms[roomId] = {
-                        gameType: 'ludo',
-                        players: [player1.username, player2.username],
-                        stake: numericStake,
-                        positions: {
-                            [player1.username]: [0, 0],
-                            [player2.username]: [0, 0]
-                        },
-                        turn: player1.username,
-                        lastDice: null,
-                        lastAction: 'Ludo match started! Roll the dice.'
-                    };
-
-                    io.to(roomId).emit('ludo_state_update', {
-                        positions: activeRooms[roomId].positions,
-                        turn: activeRooms[roomId].turn,
-                        lastAction: activeRooms[roomId].lastAction
-                    });
                 } else {
                     const targetEmojis = ['💎', '🔑', '👑', '🪙', '🏆'];
                     const targetEmoji = targetEmojis[Math.floor(Math.random() * targetEmojis.length)];
@@ -978,7 +977,7 @@ io.on('connection', (socket) => {
     });
 
     // ==========================================
-    // NAIJA WHOT 1V1 EVENTS & 8s TIMEOUT
+    // NAIJA WHOT 1V1 EVENTS & TIMEOUT
     // ==========================================
     socket.on('whot_play_card', async (data) => {
         const { roomId, username, cardIndex, chosenShape } = data;
@@ -1107,65 +1106,6 @@ io.on('connection', (socket) => {
         room.turn = opponent;
         room.lastAction = `⏱️ ${username} timed out! Auto-drew 1 card. Turn passed to ${opponent}.`;
         emitWhotState(roomId);
-    });
-
-    // ==========================================
-    // LUDO BLITZ GAME ENGINE
-    // ==========================================
-    socket.on('ludo_roll_dice', (data) => {
-        const { roomId, username } = data;
-        const room = activeRooms[roomId];
-        if (!room || room.gameType !== 'ludo') return;
-        if (room.turn !== username) return;
-
-        const diceRoll = Math.floor(Math.random() * 6) + 1;
-        room.lastDice = diceRoll;
-
-        socket.emit('ludo_dice_rolled', { diceRoll });
-        io.to(roomId).emit('ludo_action_log', { message: `${username} rolled a ${diceRoll} 🎲` });
-    });
-
-    socket.on('ludo_move_token', async (data) => {
-        const { roomId, username, tokenIndex } = data;
-        const room = activeRooms[roomId];
-        if (!room || room.gameType !== 'ludo') return;
-        if (room.turn !== username) return;
-
-        const opponent = room.players.find(p => p !== username);
-        const playerTokens = room.positions[username];
-        const dice = room.lastDice || 1;
-
-        playerTokens[tokenIndex] += dice;
-        if (playerTokens[tokenIndex] > 33) {
-            playerTokens[tokenIndex] = 33;
-        }
-
-        if (playerTokens.every(pos => pos === 33)) {
-            delete activeRooms[roomId];
-            try {
-                const payoutInfo = await settleMatchWinner(room, username, 'Ludo Blitz');
-                io.to(roomId).emit('ludo_game_over', {
-                    winner: username,
-                    netWinnings: payoutInfo.netWinnings,
-                    feeCharged: payoutInfo.feeCharged,
-                    commissionPercent: payoutInfo.commissionPercent
-                });
-            } catch (err) {
-                console.error('Error settling Ludo winner:', err);
-            } finally {
-                broadcastLoungeStats();
-            }
-            return;
-        }
-
-        room.turn = opponent;
-        room.lastDice = null;
-
-        io.to(roomId).emit('ludo_state_update', {
-            positions: room.positions,
-            turn: room.turn,
-            lastAction: `${username} moved token #${tokenIndex + 1}. Now ${opponent}'s turn!`
-        });
     });
 
     socket.on('leave_queue', (data) => {
