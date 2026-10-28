@@ -28,6 +28,9 @@ let otpStorage = {};
 // Track active user sessions to prevent multi-device login: username -> socketId
 let activeUserSessions = {};
 
+// Private reserved challenge slots for WhatsApp 1v1 invites: challengeCode -> { hostUsername, stake, gameType, createdAt }
+let reservedChallenges = {};
+
 // Helper function for making HTTPS requests to Paystack API
 const makeHttpsRequest = (options, postData = null) => {
     return new Promise((resolve, reject) => {
@@ -191,7 +194,6 @@ app.post('/initialize-payment', async (req, res) => {
     }
 
     try {
-        // Force database lookup using the username to get the correct registered email
         if (username) {
             const userRes = await pool.query('SELECT email FROM users WHERE username = $1', [username]);
             if (userRes.rows.length > 0 && userRes.rows[0].email) {
@@ -199,7 +201,6 @@ app.post('/initialize-payment', async (req, res) => {
             }
         }
         
-        // Final fallback to your primary personal email if nothing else is found
         if (!email || email.includes('arcade.com')) {
             email = 'onyejepeter1@gmail.com';
         }
@@ -508,6 +509,150 @@ io.on('connection', (socket) => {
         socket.authUsername = username;
     });
 
+    // Handle WhatsApp Private Challenge Room Creation
+    socket.on('create_challenge', (data, callback) => {
+        const { username, stake, gameType } = data;
+        if (!username || !stake || !gameType) return callback({ success: false });
+
+        const challengeCode = crypto.randomBytes(6).toString('hex');
+        reservedChallenges[challengeCode] = {
+            hostUsername: username,
+            stake: Number(stake),
+            gameType: gameType,
+            createdAt: Date.now()
+        };
+
+        // Also push the host into waitingPlayers so they occupy the queue slot privately
+        waitingPlayers = waitingPlayers.filter(p => p.username !== username);
+        waitingPlayers.push({ socketId: socket.id, username, stake: Number(stake), gameType, challengeCode });
+        broadcastLoungeStats();
+
+        callback({ success: true, challengeCode });
+    });
+
+    // Accept & Join Private Challenge Room
+    socket.on('accept_challenge', async (data, callback) => {
+        const { username, challengeCode } = data;
+        const challenge = reservedChallenges[challengeCode];
+
+        if (!challenge) {
+            return callback({ success: false, message: 'Challenge link expired or already played.' });
+        }
+
+        if (challenge.hostUsername === username) {
+            return callback({ success: false, message: 'You cannot challenge yourself!' });
+        }
+
+        const numericStake = challenge.stake;
+        const gameType = challenge.gameType;
+
+        const userRes = await pool.query('SELECT balance FROM users WHERE username = $1', [username]);
+        if (userRes.rows.length === 0 || parseFloat(userRes.rows[0].balance) < numericStake) {
+            return callback({ success: false, needDeposit: true, stake: numericStake, message: 'Insufficient wallet balance. Please deposit.' });
+        }
+
+        // Find host in waiting players
+        const hostIndex = waitingPlayers.findIndex(p => p.challengeCode === challengeCode);
+        if (hostIndex === -1) {
+            delete reservedChallenges[challengeCode];
+            return callback({ success: false, message: 'Host is no longer waiting in the queue.' });
+        }
+
+        const player1 = waitingPlayers.splice(hostIndex, 1)[0];
+        const player2 = { socketId: socket.id, username, stake: numericStake, gameType };
+        delete reservedChallenges[challengeCode];
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            const p1Bal = await client.query('SELECT balance FROM users WHERE username = $1 FOR UPDATE', [player1.username]);
+            const p2Bal = await client.query('SELECT balance FROM users WHERE username = $1 FOR UPDATE', [player2.username]);
+
+            if (p1Bal.rows.length === 0 || parseFloat(p1Bal.rows[0].balance) < numericStake ||
+                p2Bal.rows.length === 0 || parseFloat(p2Bal.rows[0].balance) < numericStake) {
+                await client.query('ROLLBACK');
+                broadcastLoungeStats();
+                return callback({ success: false, needDeposit: true, stake: numericStake, message: 'Insufficient balance to cover stake.' });
+            }
+
+            await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [numericStake, player1.username]);
+            await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [numericStake, player2.username]);
+
+            let gameLabel = gameType === 'whot' ? 'Naija Whot' : 'Emoji Treasure Hunt';
+
+            await client.query(
+                'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
+                ['STAKE', numericStake, `Staked ₦${numericStake.toLocaleString()} for ${gameLabel} match`, player1.username]
+            );
+            await client.query(
+                'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
+                ['STAKE', numericStake, `Staked ₦${numericStake.toLocaleString()} for ${gameLabel} match`, player2.username]
+            );
+
+            await client.query('COMMIT');
+
+            const roomId = `${gameType}_room_` + Date.now() + '_' + Math.floor(Math.random() * 1000);
+            const socket1 = io.sockets.sockets.get(player1.socketId);
+            const socket2 = io.sockets.sockets.get(player2.socketId);
+            if (socket1) socket1.join(roomId);
+            if (socket2) socket2.join(roomId);
+
+            if (gameType === 'whot') {
+                const deck = generateWhotDeck();
+                const hand1 = deck.splice(0, 5);
+                const hand2 = deck.splice(0, 5);
+
+                let firstCardIdx = deck.findIndex(c => c.shape !== 'whot' && ![1, 2, 8, 14].includes(c.number));
+                if (firstCardIdx === -1) firstCardIdx = 0;
+                const topCard = deck.splice(firstCardIdx, 1)[0];
+
+                activeRooms[roomId] = {
+                    gameType: 'whot',
+                    players: [player1.username, player2.username],
+                    stake: numericStake,
+                    deck,
+                    discardPile: [topCard],
+                    hands: {
+                        [player1.username]: hand1,
+                        [player2.username]: hand2
+                    },
+                    topCard,
+                    calledShape: null,
+                    turn: player1.username,
+                    pendingPick: 0,
+                    lastAction: `Match started! Top card is ${topCard.shape.toUpperCase()} ${topCard.number}`
+                };
+
+                emitWhotState(roomId);
+            } else {
+                const targetEmojis = ['💎', '🔑', '👑', '🪙', '🏆'];
+                const targetEmoji = targetEmojis[Math.floor(Math.random() * targetEmojis.length)];
+                const winningIndex = Math.floor(Math.random() * 40);
+
+                activeRooms[roomId] = {
+                    gameType: 'treasure',
+                    players: [player1.username, player2.username],
+                    stake: numericStake,
+                    targetEmoji,
+                    winningIndex,
+                    turn: player1.username
+                };
+
+                io.to(roomId).emit('match_found', { roomId, players: [player1.username, player2.username], targetEmoji, winningIndex });
+            }
+
+            callback({ success: true });
+        } catch (err) {
+            await client.query('ROLLBACK');
+            console.error('Error accepting challenge:', err);
+            callback({ success: false, message: 'Server error starting match.' });
+        } finally {
+            client.release();
+            broadcastLoungeStats();
+        }
+    });
+
     socket.on('get_balance', async (data, callback) => {
         const { email, username } = data;
         try {
@@ -586,7 +731,7 @@ io.on('connection', (socket) => {
                 subject: 'Verify Your Email Address',
                 html: `
                     <div style="font-family: Arial, sans-serif; padding: 20px;">
-                        <h2>Welcome to Emoji Treasure Hunt!</h2>
+                        <h2>Welcome to Skill Arcade!</h2>
                         <p>Your verification code is:</p>
                         <h1 style="color: #4F46E5; letter-spacing: 2px;">${verificationCode}</h1>
                         <p>Please enter this code in the app to complete your verification.</p>
@@ -830,8 +975,9 @@ io.on('connection', (socket) => {
             return;
         }
 
-        waitingPlayers = waitingPlayers.filter(p => p.username !== username);
-        const opponentIndex = waitingPlayers.findIndex(p => Number(p.stake) === numericStake && p.gameType === gameType);
+        // Exclude private challenge slots from general public matching
+        waitingPlayers = waitingPlayers.filter(p => p.username !== username && !p.challengeCode);
+        const opponentIndex = waitingPlayers.findIndex(p => Number(p.stake) === numericStake && p.gameType === gameType && !p.challengeCode);
 
         if (opponentIndex !== -1) {
             const player1 = waitingPlayers.splice(opponentIndex, 1)[0];
@@ -854,8 +1000,7 @@ io.on('connection', (socket) => {
                 await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [numericStake, player1.username]);
                 await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [numericStake, player2.username]);
 
-                let gameLabel = 'Emoji Treasure Hunt';
-                if (gameType === 'whot') gameLabel = 'Naija Whot';
+                let gameLabel = gameType === 'whot' ? 'Naija Whot' : 'Emoji Treasure Hunt';
 
                 await client.query(
                     'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
@@ -1130,6 +1275,11 @@ io.on('connection', (socket) => {
     socket.on('leave_queue', (data) => {
         const { username } = data;
         waitingPlayers = waitingPlayers.filter(p => p.username !== username);
+        for (const [code, chal] of Object.entries(reservedChallenges)) {
+            if (chal.hostUsername === username) {
+                delete reservedChallenges[code];
+            }
+        }
         broadcastLoungeStats();
     });
 
@@ -1219,7 +1369,8 @@ io.on('connection', (socket) => {
                 return callback({ success: false, message: 'Transfer Failed: ' + transferData.message });
             }
 
-            await pool.query(xmlEscaper = 'INSERT INTO admin_income_logs (type, description, amount) VALUES ($1, $2, $3)',
+            await pool.query(
+                'INSERT INTO admin_income_logs (type, description, amount) VALUES ($1, $2, $3)',
                 ['WITHDRAWAL', `Withdrawn to ${bankName} (${accountNumber}) via API`, -amount]
             );
 
@@ -1284,6 +1435,12 @@ io.on('connection', (socket) => {
         waitingPlayers = waitingPlayers.filter(p => p.socketId !== socket.id);
 
         if (socket.authUsername) {
+            for (const [code, chal] of Object.entries(reservedChallenges)) {
+                if (chal.hostUsername === socket.authUsername) {
+                    delete reservedChallenges[code];
+                }
+            }
+
             for (const [roomId, room] of Object.entries(activeRooms)) {
                 if (room.gameType === 'whot' && room.players.includes(socket.authUsername)) {
                     const winner = room.players.find(p => p !== socket.authUsername);

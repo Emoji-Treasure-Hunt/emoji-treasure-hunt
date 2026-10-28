@@ -376,9 +376,14 @@
 <div class="container">
     <!-- AUTHENTICATION SCREEN -->
     <div id="auth-screen" class="screen-section active">
-        <h1><span class="app-logo">😁</span> Emoji Treasure Hunt</h1>
+        <h1><span class="app-logo">😁</span> Skill Arcade</h1>
         <p class="subtitle" id="auth-subtitle">Login to your account to play</p>
         
+        <!-- CHALLENGE BANNER FOR GUESTS -->
+        <div id="challenge-banner" style="display: none; background: rgba(0, 243, 255, 0.15); border: 1px solid var(--neon-blue); padding: 12px; border-radius: 8px; margin-bottom: 15px;">
+            <p id="challenge-banner-text" style="margin: 0; font-size: 0.9rem; color: #fff; font-family:'Orbitron',sans-serif;"></p>
+        </div>
+
         <div id="main-auth-form">
             <div class="form-group">
                 <label>Username</label>
@@ -628,14 +633,6 @@
             <button class="group-btn vip-btn" onclick="joinGameQueue(25000, 'Executive VIP Lounge')">Play</button>
         </div>
 
-        <!-- WHATSAPP INVITE CONTAINER -->
-        <div id="whatsapp-invite-box" style="display: none; margin-top: 15px; padding: 12px; background: rgba(37, 211, 102, 0.1); border: 1px solid #25D366; border-radius: 8px;">
-            <p style="margin: 0 0 8px 0; font-size: 0.85rem; color: #25D366; font-family:'Orbitron',sans-serif;">📱 Want to play with a friend?</p>
-            <button class="btn" style="background: linear-gradient(45deg, #128C7E, #25D366); color: #fff; margin-top: 0; padding: 10px; font-size: 0.85rem;" onclick="shareWhatsAppInvite()">
-                📲 Send WhatsApp Challenge Link
-            </button>
-        </div>
-
         <!-- GROUP CHAT ROOM SCREEN -->
         <div class="chat-container">
             <h3 style="font-size: 0.9rem; color: var(--neon-blue); margin: 0 0 8px 0; font-family:'Orbitron',sans-serif;">💬 Hunters Live Chat</h3>
@@ -714,6 +711,18 @@
             </div>
             <button class="group-btn vip-btn" onclick="joinWhotQueue(25000, 'Whot Executive Lounge')">Play</button>
         </div>
+
+        <!-- WHOT GROUP CHAT ROOM SECTION -->
+        <div class="chat-container">
+            <h3 style="font-size: 0.9rem; color: var(--neon-blue); margin: 0 0 8px 0; font-family:'Orbitron',sans-serif;">💬 Whot Arena Live Chat</h3>
+            <div id="whot-chat-messages-box" class="chat-messages">
+                <div style="color: #64748b; text-align: center; margin-top: auto; margin-bottom: auto; font-size: 0.8rem;">Welcome to the Whot community chat!</div>
+            </div>
+            <div class="chat-input-row">
+                <input type="text" id="whot-chat-input-field" placeholder="Type a message..." maxlength="150" onkeypress="handleWhotChatKeyPress(event)">
+                <button class="chat-send-btn" onclick="sendWhotChatMessage()">Send</button>
+            </div>
+        </div>
     </div>
 
     <!-- PLAYER PROFILE SCREEN -->
@@ -750,6 +759,14 @@
 
         <div class="turn-indicator-box" id="whot-turn-banner">⏳ Searching for Whot opponent...</div>
         <div id="whot-action-log" style="font-size: 0.85rem; color: var(--neon-gold); margin-bottom: 12px; min-height: 20px;"></div>
+
+        <!-- WHATSAPP WHOT INVITE CONTAINER -->
+        <div id="whot-whatsapp-invite-box" style="display: none; margin-bottom: 15px; padding: 12px; background: rgba(37, 211, 102, 0.1); border: 1px solid #25D366; border-radius: 8px;">
+            <p style="margin: 0 0 8px 0; font-size: 0.85rem; color: #25D366; font-family:'Orbitron',sans-serif;">📱 Want to challenge a friend?</p>
+            <button class="btn" style="background: linear-gradient(45deg, #128C7E, #25D366); color: #fff; margin-top: 0; padding: 10px; font-size: 0.85rem;" onclick="shareWhotWhatsAppInvite()">
+                📲 Send Whot WhatsApp Challenge
+            </button>
+        </div>
 
         <!-- TABLE CENTER: MARKET & TOP CARD -->
         <div style="display: flex; justify-content: center; gap: 25px; align-items: center; margin: 15px 0; padding: 15px; background: rgba(0,0,0,0.35); border-radius: 12px; border: 1px solid rgba(255,255,255,0.08);">
@@ -1059,6 +1076,8 @@
     let currentTurnPlayer = null;
     let isMyTurn = false;
     let pendingUserData = null;
+    let activeChallengeCode = null;
+    let pendingChallenge = null;
 
     const decoyPool = [
         '😂', '😭', '🤯', '😡', '😱', '🤡', '🤠', '🥳', '😎', '🥶', '🥴', '🥺',
@@ -1070,7 +1089,7 @@
     socket.on('connect', () => {
         console.log("Connected to the game server successfully!");
         loadAllBanks();
-        checkUrlReferral();
+        checkUrlChallengeOrReferral();
         checkPersistedSession();
     });
 
@@ -1127,7 +1146,62 @@
             if (adminMenuItem) {
                 adminMenuItem.style.display = (savedUser.toLowerCase() === ADMIN_USERNAME.toLowerCase()) ? 'block' : 'none';
             }
+
+            if (pendingChallenge) {
+                attemptAcceptChallenge();
+            }
         }
+    }
+
+    function checkUrlChallengeOrReferral() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const codeParam = urlParams.get('challenge');
+        const refParam = urlParams.get('ref');
+
+        if (codeParam) {
+            pendingChallenge = codeParam;
+            const banner = document.getElementById('challenge-banner');
+            const bannerText = document.getElementById('challenge-banner-text');
+            if (banner && bannerText) {
+                banner.style.display = 'block';
+                bannerText.innerHTML = `🎮 You have been invited to a private 1v1 challenge match! Register or log in to accept.`;
+            }
+
+            if (!isRegistering && !currentUser) {
+                toggleAuthMode();
+            }
+        }
+
+        if (refParam) {
+            const refInput = document.getElementById('referral-input');
+            if (refInput) refInput.value = refParam.trim();
+        }
+    }
+
+    function attemptAcceptChallenge() {
+        if (!pendingChallenge) return;
+        const code = pendingChallenge;
+        pendingChallenge = null;
+
+        socket.emit('accept_challenge', { username: currentUser, challengeCode: code }, (res) => {
+            if (res && res.success) {
+                if (res.gameType === 'whot') {
+                    switchScreen('whot-game-screen');
+                    document.getElementById('whot-turn-banner').innerText = "⏳ Joining private challenge match...";
+                } else {
+                    switchScreen('game-screen');
+                    document.getElementById('turn-indicator').innerText = "⏳ Joining private challenge match...";
+                }
+            } else if (res && res.needDeposit) {
+                alert(`⚠️ You need at least ₦${res.stake.toLocaleString()} to accept this challenge. Please deposit funds.`);
+                showWalletCashier();
+                const depInput = document.getElementById('deposit-amount');
+                if (depInput) depInput.value = res.stake;
+            } else {
+                alert("❌ " + (res ? res.message : "Challenge unavailable."));
+                switchScreen('game-hub-screen');
+            }
+        });
     }
 
     function selectGame(gameId) {
@@ -1164,7 +1238,8 @@
 
         let userObj = getCurrentUserObj();
         if (userObj.balance < stakeAmount) {
-            alert(`Insufficient wallet balance! You need at least ₦${stakeAmount.toLocaleString()} to participate in the ${groupName}.`);
+            alert(`Insufficient wallet balance! You need at least ₦${stakeAmount.toLocaleString()} to participate in the ${groupName}. Please deposit funds in the Cashier.`);
+            showWalletCashier();
             return;
         }
 
@@ -1190,10 +1265,11 @@
 
         gameActive = false;
 
-        socket.emit('join_queue', {
-            username: username,
-            stake: stakeAmount,
-            gameType: 'treasure'
+        // Create private challenge slot & get code
+        socket.emit('create_challenge', { username, stake: stakeAmount, gameType: 'treasure' }, (res) => {
+            if (res && res.success) {
+                activeChallengeCode = res.challengeCode;
+            }
         });
     }
 
@@ -1259,8 +1335,22 @@
     });
 
     function shareWhatsAppInvite() {
+        if (!activeChallengeCode) {
+            alert("Waiting room link is initializing, please try again in a moment.");
+            return;
+        }
         const stakeText = selectedStake ? `₦${selectedStake.toLocaleString()}` : 'our match';
-        const text = encodeURIComponent(`Bro, let's play right now! I just set up a ${stakeText} table on Emoji Treasure Hunt Arcade. Click here to join my table: ${window.location.origin}/?ref=${encodeURIComponent(currentUser)}`);
+        const text = encodeURIComponent(`Bro, join my private 1v1 match on Emoji Treasure Hunt! Stake: ${stakeText}. Click here to play and register/deposit: ${window.location.origin}/?challenge=${activeChallengeCode}&ref=${encodeURIComponent(currentUser)}`);
+        window.open(`https://wa.me/?text=${text}`, '_blank');
+    }
+
+    function shareWhotWhatsAppInvite() {
+        if (!activeChallengeCode) {
+            alert("Waiting room link is initializing, please try again in a moment.");
+            return;
+        }
+        const stakeText = selectedStake ? `₦${selectedStake.toLocaleString()}` : 'our match';
+        const text = encodeURIComponent(`🎮 Join my private Naija Whot 1v1 match! Stake: ${stakeText}. Click here to join: ${window.location.origin}/?challenge=${activeChallengeCode}&ref=${encodeURIComponent(currentUser)}`);
         window.open(`https://wa.me/?text=${text}`, '_blank');
     }
 
@@ -1320,7 +1410,9 @@
     socket.on('game_over', (data) => {
         clearInterval(timerInterval);
         gameActive = false;
-        document.getElementById('whatsapp-invite-box').style.display = 'none';
+        activeChallengeCode = null;
+        const twBox = document.getElementById('whatsapp-invite-box');
+        if (twBox) twBox.style.display = 'none';
         
         const boxes = document.querySelectorAll('.box');
         boxes.forEach((box, idx) => {
@@ -1360,20 +1452,6 @@
             e.returnValue = '';
         }
     });
-
-    function checkUrlReferral() {
-        const urlParams = new URLSearchParams(window.location.search);
-        const refParam = urlParams.get('ref');
-        if (refParam) {
-            const refInput = document.getElementById('referral-input');
-            if (refInput) {
-                refInput.value = refParam.trim();
-            }
-            if (!isRegistering && !currentUser) {
-                toggleAuthMode();
-            }
-        }
-    }
 
     function showReferralModal() {
         switchScreen('referral-screen');
@@ -2045,6 +2123,10 @@
         } else {
             adminMenuItem.style.display = 'none';
         }
+
+        if (pendingChallenge) {
+            attemptAcceptChallenge();
+        }
     }
 
     function logout() {
@@ -2151,7 +2233,6 @@
         }
 
         let userObj = getCurrentUserObj();
-        // Uses your exact user contact email, falling back to your personal email if needed
         let userEmail = userObj.contact || "onyejepeter1@gmail.com";
 
         msgEl.className = "success-msg";
@@ -2240,6 +2321,9 @@
     function returnToHubFromWallet() {
         switchScreen('game-hub-screen');
         updateLobbyWallet();
+        if (pendingChallenge) {
+            checkChallengeBalanceAndRoute();
+        }
     }
 
     function showChangePasswordScreen() {
@@ -2281,6 +2365,7 @@
         if (selectedStake > 0) {
             socket.emit('leave_queue', { username: currentUser });
             selectedStake = 0;
+            activeChallengeCode = null;
         }
 
         clearInterval(timerInterval);
@@ -2392,26 +2477,24 @@
     }
 
     socket.on('receive_chat_message', (data) => {
-        const chatBox = document.getElementById('chat-messages-box');
-        
-        if (chatBox.children.length === 1 && chatBox.children[0].tagName === 'DIV' && chatBox.children[0].style.textAlign === 'center') {
-            chatBox.innerHTML = '';
-        }
-
-        const msgDiv = document.createElement('div');
-        msgDiv.classList.add('chat-msg-item');
-        
-        let isMe = (data.username === currentUser);
-        let userColor = isMe ? '#00ff66' : '#00f3ff';
-
-        msgDiv.innerHTML = `
-            <span class="chat-msg-user" style="color: ${userColor};">${data.username}</span>
-            <span class="chat-msg-time" style="font-size: 0.65rem; color: #64748b; float: right;">${data.time}</span><br>
-            <span style="color: #f8fafc;">${escapeHtml(data.message)}</span>
-        `;
-
-        chatBox.appendChild(msgDiv);
-        chatBox.scrollTop = chatBox.scrollHeight;
+        const chatBoxes = [document.getElementById('chat-messages-box'), document.getElementById('whot-chat-messages-box')];
+        chatBoxes.forEach(chatBox => {
+            if (!chatBox) return;
+            if (chatBox.children.length === 1 && chatBox.children[0].tagName === 'DIV' && chatBox.children[0].style.textAlign === 'center') {
+                chatBox.innerHTML = '';
+            }
+            const msgDiv = document.createElement('div');
+            msgDiv.classList.add('chat-msg-item');
+            let isMe = (data.username === currentUser);
+            let userColor = isMe ? '#00ff66' : '#00f3ff';
+            msgDiv.innerHTML = `
+                <span class="chat-msg-user" style="color: ${userColor};">${data.username}</span>
+                <span class="chat-msg-time" style="font-size: 0.65rem; color: #64748b; float: right;">${data.time}</span><br>
+                <span style="color: #f8fafc;">${escapeHtml(data.message)}</span>
+            `;
+            chatBox.appendChild(msgDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        });
     });
 
     function escapeHtml(text) {
@@ -2440,7 +2523,9 @@
 
         let userObj = getCurrentUserObj();
         if (userObj.balance < stakeAmount) {
-            return alert(`Insufficient wallet balance! You need at least ₦${stakeAmount.toLocaleString()} to join ${roomTitle}.`);
+            alert(`Insufficient wallet balance! You need at least ₦${stakeAmount.toLocaleString()} to join ${roomTitle}. Please deposit funds in the Cashier.`);
+            showWalletCashier();
+            return;
         }
 
         selectedStake = stakeAmount;
@@ -2450,11 +2535,18 @@
         document.getElementById('whot-opponent-cards').innerText = '0';
         document.getElementById('whot-turn-banner').innerText = '⏳ Waiting for opponent to join table...';
         document.getElementById('whot-my-hand').innerHTML = '';
+        document.getElementById('whot-whatsapp-invite-box').style.display = 'block';
 
         socket.emit('join_queue', {
             username,
             stake: stakeAmount,
             gameType: 'whot'
+        });
+
+        socket.emit('create_challenge', { username, stake: stakeAmount, gameType: 'whot' }, (res) => {
+            if (res && res.success) {
+                activeChallengeCode = res.challengeCode;
+            }
         });
     }
 
@@ -2467,6 +2559,7 @@
         document.getElementById('whot-opponent-cards').innerText = state.opponentCardCount;
         document.getElementById('whot-market-count').innerText = `(${state.marketCount})`;
         document.getElementById('whot-action-log').innerText = state.lastAction || '';
+        document.getElementById('whot-whatsapp-invite-box').style.display = 'none';
 
         const turnBanner = document.getElementById('whot-turn-banner');
         if (isMyTurn) {
@@ -2577,7 +2670,10 @@
     socket.on('whot_game_over', (data) => {
         gameActive = false;
         selectedStake = 0;
+        activeChallengeCode = null;
         clearInterval(whotTurnInterval);
+        const wBox = document.getElementById('whot-whatsapp-invite-box');
+        if (wBox) wBox.style.display = 'none';
         const turnBanner = document.getElementById('whot-turn-banner');
         if (data.winner === currentUser) {
             let userObj = getCurrentUserObj();
@@ -2601,6 +2697,7 @@
         if (selectedStake > 0) {
             socket.emit('leave_queue', { username: currentUser });
             selectedStake = 0;
+            activeChallengeCode = null;
         }
         switchScreen('whot-lobby-screen');
         updateLobbyWallet();
