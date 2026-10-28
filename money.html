@@ -1265,7 +1265,12 @@
 
         gameActive = false;
 
-        // Create private challenge slot & get code
+        socket.emit('join_queue', {
+            username: username,
+            stake: stakeAmount,
+            gameType: 'treasure'
+        });
+
         socket.emit('create_challenge', { username, stake: stakeAmount, gameType: 'treasure' }, (res) => {
             if (res && res.success) {
                 activeChallengeCode = res.challengeCode;

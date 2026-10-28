@@ -28,7 +28,7 @@ let otpStorage = {};
 // Track active user sessions to prevent multi-device login: username -> socketId
 let activeUserSessions = {};
 
-// Private reserved challenge slots for WhatsApp 1v1 invites: challengeCode -> { hostUsername, stake, gameType, createdAt }
+// Private reserved challenge slots for WhatsApp 1v1 invites: challengeCode -> { hostUsername, stake, gameType, socketId, createdAt }
 let reservedChallenges = {};
 
 // Helper function for making HTTPS requests to Paystack API
@@ -516,13 +516,14 @@ io.on('connection', (socket) => {
 
         const challengeCode = crypto.randomBytes(6).toString('hex');
         reservedChallenges[challengeCode] = {
+            socketId: socket.id,
             hostUsername: username,
             stake: Number(stake),
             gameType: gameType,
             createdAt: Date.now()
         };
 
-        // Also push the host into waitingPlayers so they occupy the queue slot privately
+        // Also push host into waitingPlayers so they occupy the queue privately
         waitingPlayers = waitingPlayers.filter(p => p.username !== username);
         waitingPlayers.push({ socketId: socket.id, username, stake: Number(stake), gameType, challengeCode });
         broadcastLoungeStats();
@@ -551,16 +552,16 @@ io.on('connection', (socket) => {
             return callback({ success: false, needDeposit: true, stake: numericStake, message: 'Insufficient wallet balance. Please deposit.' });
         }
 
-        // Find host in waiting players
-        const hostIndex = waitingPlayers.findIndex(p => p.challengeCode === challengeCode);
-        if (hostIndex === -1) {
+        const hostSocket = io.sockets.sockets.get(challenge.socketId);
+        if (!hostSocket) {
             delete reservedChallenges[challengeCode];
             return callback({ success: false, message: 'Host is no longer waiting in the queue.' });
         }
 
-        const player1 = waitingPlayers.splice(hostIndex, 1)[0];
+        const player1 = { socketId: challenge.socketId, username: challenge.hostUsername, stake: numericStake, gameType };
         const player2 = { socketId: socket.id, username, stake: numericStake, gameType };
         delete reservedChallenges[challengeCode];
+        waitingPlayers = waitingPlayers.filter(p => p.challengeCode !== challengeCode);
 
         const client = await pool.connect();
         try {
@@ -642,7 +643,7 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('match_found', { roomId, players: [player1.username, player2.username], targetEmoji, winningIndex });
             }
 
-            callback({ success: true });
+            callback({ success: true, gameType });
         } catch (err) {
             await client.query('ROLLBACK');
             console.error('Error accepting challenge:', err);
@@ -975,7 +976,6 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // Exclude private challenge slots from general public matching
         waitingPlayers = waitingPlayers.filter(p => p.username !== username && !p.challengeCode);
         const opponentIndex = waitingPlayers.findIndex(p => Number(p.stake) === numericStake && p.gameType === gameType && !p.challengeCode);
 
