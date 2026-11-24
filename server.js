@@ -25,8 +25,9 @@ const saltRounds = 10;
 
 // Emoji Question 1v1 (4-Emoji Pick & Guess) constants
 const EQ_TOTAL_TURNS = 6; // 3 full rounds (each player sets 3x and guesses 3x)
-const EQ_SET_SECONDS = 15;
-const EQ_GUESS_SECONDS = 12;
+const EQ_SET_SECONDS = 20;
+const EQ_GUESS_SECONDS = 8;
+const EQ_RESULT_PAUSE_MS = 6000;
 
 // Temporary memory store for OTP verification codes
 let otpStorage = {};
@@ -728,7 +729,7 @@ function resolveEqTurn(roomId, guessedEmoji, timedOut = false) {
     room.timer = setTimeout(() => {
         if (!activeRooms[roomId]) return;
         advanceEqTurn(roomId);
-    }, 2500);
+    }, EQ_RESULT_PAUSE_MS);
 }
 
 function startEqMatch(roomId) {
@@ -1281,6 +1282,10 @@ io.on('connection', (socket) => {
     socket.on('join_queue', async (data) => {
         const { username, stake, gameType = 'treasure' } = data;
         const numericStake = Number(stake);
+        if (username) {
+            activeUserSessions[username] = socket.id;
+            socket.authUsername = username;
+        }
         
         const userRes = await pool.query('SELECT balance FROM users WHERE username = $1', [username]);
         if (userRes.rows.length === 0 || parseFloat(userRes.rows[0].balance) < numericStake) {
@@ -1420,12 +1425,15 @@ io.on('connection', (socket) => {
         if (actorName !== setterName) return;
 
         if (!Array.isArray(emojis) || emojis.length !== 4) return;
-        const uniqueEmojis = [...new Set(emojis)];
+        const cleaned = emojis.map(e => (typeof e === 'string' ? e.trim() : '')).filter(Boolean);
+        const uniqueEmojis = [...new Set(cleaned)];
         if (uniqueEmojis.length !== 4) return;
-        if (!uniqueEmojis.every((e) => EMOJI_POOL.includes(e))) return;
-        if (!uniqueEmojis.includes(secretEmoji)) return;
 
-        beginEqGuessPhase(roomId, uniqueEmojis, secretEmoji, false);
+        const chosenSecret = (typeof secretEmoji === 'string' && uniqueEmojis.includes(secretEmoji.trim()))
+            ? secretEmoji.trim()
+            : uniqueEmojis[0];
+
+        beginEqGuessPhase(roomId, uniqueEmojis, chosenSecret, false);
     });
 
     socket.on('eq:submit_guess', (data) => {
@@ -1436,9 +1444,11 @@ io.on('connection', (socket) => {
         const guesserName = room.players[1 - room.setterIndex];
         const actorName = username || socket.authUsername;
         if (actorName !== guesserName) return;
-        if (!room.shuffledEmojis.includes(emoji)) return;
 
-        resolveEqTurn(roomId, emoji, false);
+        const pickedGuess = typeof emoji === 'string' ? emoji.trim() : '';
+        if (!pickedGuess || !room.shuffledEmojis.includes(pickedGuess)) return;
+
+        resolveEqTurn(roomId, pickedGuess, false);
     });
 
     // ==========================================

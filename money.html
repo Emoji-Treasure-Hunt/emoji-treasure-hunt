@@ -402,24 +402,26 @@
         /* ==========================================
            NEON MIND-VAULT: EMOJI QUESTION 1v1 ARENA
            ========================================== */
-        #eq-game-screen {
+        #eq-game-screen.screen-section.active {
+            display: block;
             position: relative;
             background-color: #0b0718;
             background-image:
-                radial-gradient(circle at 50% 18%, rgba(0, 243, 255, 0.16) 0%, rgba(139, 92, 246, 0.12) 38%, rgba(9, 7, 20, 0.96) 78%),
-                linear-gradient(rgba(0, 243, 255, 0.06) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(168, 85, 247, 0.06) 1px, transparent 1px);
+                radial-gradient(circle at 50% 18%, rgba(0, 243, 255, 0.22) 0%, rgba(139, 92, 246, 0.16) 42%, rgba(9, 7, 20, 0.96) 82%),
+                linear-gradient(rgba(0, 243, 255, 0.08) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(168, 85, 247, 0.08) 1px, transparent 1px);
             background-size: 100% 100%, 22px 22px, 22px 22px;
-            border: 1px solid rgba(0, 243, 255, 0.35);
+            border: 1px solid rgba(0, 243, 255, 0.45);
             border-radius: 14px;
             padding: 16px 14px;
-            box-shadow: inset 0 0 28px rgba(0, 243, 255, 0.08), 0 0 24px rgba(139, 92, 246, 0.18);
+            box-shadow: inset 0 0 28px rgba(0, 243, 255, 0.1), 0 0 24px rgba(139, 92, 246, 0.22);
         }
 
         /* ==========================================
            OPTION 1: CLASSIC EMERALD FELT WHOT TABLE
            ========================================== */
-        #whot-game-screen {
+        #whot-game-screen.screen-section.active {
+            display: block;
             position: relative;
             background-color: #065f46;
             background-image:
@@ -1779,15 +1781,12 @@
     }
 
     function toggleEqPoolEmoji(emoji) {
-        const idx = eqSelectedEmojis.indexOf(emoji);
-        if (idx !== -1) {
-            if (eqSecretEmoji !== emoji) {
-                eqSecretEmoji = emoji;
-            } else {
-                eqSelectedEmojis.splice(idx, 1);
-                eqSecretEmoji = eqSelectedEmojis[0] || null;
-            }
-        } else if (eqSelectedEmojis.length < 4) {
+        if (eqSelectedEmojis.includes(emoji)) {
+            eqSecretEmoji = emoji;
+            renderEqSelectedSlots();
+            return;
+        }
+        if (eqSelectedEmojis.length < 4) {
             eqSelectedEmojis.push(emoji);
             if (!eqSecretEmoji) eqSecretEmoji = emoji;
         }
