@@ -400,6 +400,23 @@
         .chat-send-btn:hover { background: #fff; box-shadow: 0 0 15px rgba(255,255,255,0.8); }
 
         /* ==========================================
+           NEON MIND-VAULT: EMOJI QUESTION 1v1 ARENA
+           ========================================== */
+        #eq-game-screen {
+            position: relative;
+            background-color: #0b0718;
+            background-image:
+                radial-gradient(circle at 50% 18%, rgba(0, 243, 255, 0.16) 0%, rgba(139, 92, 246, 0.12) 38%, rgba(9, 7, 20, 0.96) 78%),
+                linear-gradient(rgba(0, 243, 255, 0.06) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(168, 85, 247, 0.06) 1px, transparent 1px);
+            background-size: 100% 100%, 22px 22px, 22px 22px;
+            border: 1px solid rgba(0, 243, 255, 0.35);
+            border-radius: 14px;
+            padding: 16px 14px;
+            box-shadow: inset 0 0 28px rgba(0, 243, 255, 0.08), 0 0 24px rgba(139, 92, 246, 0.18);
+        }
+
+        /* ==========================================
            OPTION 1: CLASSIC EMERALD FELT WHOT TABLE
            ========================================== */
         #whot-game-screen {
@@ -899,7 +916,7 @@
         </div>
     </div>
 
-    <!-- EMOJI QUESTION ACTIVE 1v1 ARENA SCREEN (4-EMOJI PICK & GUESS) -->
+    <!-- EMOJI QUESTION ACTIVE 1v1 ARENA SCREEN (NEON MIND-VAULT + 4-EMOJI PICK & GUESS) -->
     <div id="eq-game-screen" class="screen-section">
         <h1 id="eq-active-title">Emoji Question 1v1</h1>
         <div class="user-panel">
@@ -918,7 +935,7 @@
             <div>Turn Time: <span class="timer" id="eq-timer">20s</span></div>
         </div>
 
-        <div style="display: flex; justify-content: space-around; background: rgba(0,0,0,0.35); padding: 8px 12px; border-radius: 8px; margin-bottom: 12px; font-family:'Orbitron',sans-serif; font-size: 0.85rem;">
+        <div style="display: flex; justify-content: space-around; background: rgba(0,0,0,0.45); padding: 8px 12px; border-radius: 8px; margin-bottom: 12px; font-family:'Orbitron',sans-serif; font-size: 0.85rem; border: 1px solid rgba(168, 85, 247, 0.25);">
             <div><span id="eq-p1-label">P1</span>: <strong id="eq-score-1" style="color: var(--neon-blue);">0</strong></div>
             <div>VS</div>
             <div><span id="eq-p2-label">P2</span>: <strong id="eq-score-2" style="color: var(--neon-gold);">0</strong></div>
@@ -928,14 +945,14 @@
 
         <!-- WHATSAPP EMOJI QUESTION INVITE CONTAINER -->
         <div id="eq-whatsapp-invite-box" style="display: none; margin-bottom: 15px; padding: 12px; background: rgba(37, 211, 102, 0.1); border: 1px solid #25D366; border-radius: 8px;">
-            <p style="margin: 0 0 8px 0; font-size: 0.85rem; color: #25D366; font-family:'Orbitron',sans-serif;">📱 Want to challenge a friend?</p>
+            <p style="margin: 0 0 8px 0; font-size: 0.85rem; color: #25D366; font-family:'Orbitron',sans-serif;">📱 Want to challenge a friend privately?</p>
             <button class="btn" style="background: linear-gradient(45deg, #128C7E, #25D366); color: #fff; margin-top: 0; padding: 10px; font-size: 0.85rem;" onclick="shareEqWhatsAppInvite()">
-                📲 Send Emoji Question WhatsApp Link
+                📲 Create &amp; Share WhatsApp Link
             </button>
         </div>
 
         <!-- VIEW 1: SETTER PICKS 4 EMOJIS & MARKS 1 SECRET RIGHT EMOJI -->
-        <div id="eq-setter-view" style="display: none; background: rgba(15, 23, 42, 0.85); padding: 14px; border-radius: 12px; border: 1px solid var(--glass-border); margin-bottom: 12px; text-align: left;">
+        <div id="eq-setter-view" style="display: none; background: rgba(15, 23, 42, 0.88); padding: 14px; border-radius: 12px; border: 1px solid var(--glass-border); margin-bottom: 12px; text-align: left;">
             <div style="font-size: 0.95rem; font-weight: 700; color: var(--neon-blue); margin-bottom: 4px;">Pick 4 Emojis &amp; Tap One as SECRET Target</div>
             <div style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 10px;">Gold glow = secret right emoji. If rival misses or times out, you get +1!</div>
 
@@ -979,19 +996,19 @@
         </div>
 
         <!-- VIEW 2: WAITING SCREEN -->
-        <div id="eq-waiting-view" style="display: none; background: rgba(15, 23, 42, 0.85); padding: 24px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); margin-bottom: 12px;">
+        <div id="eq-waiting-view" style="display: none; background: rgba(15, 23, 42, 0.88); padding: 24px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); margin-bottom: 12px;">
             <div style="font-size: 2.2rem; margin-bottom: 8px;">🤔</div>
             <div id="eq-waiting-text" style="font-size: 0.95rem; color: #cbd5e1;">Waiting for opponent...</div>
         </div>
 
         <!-- VIEW 3: GUESSER PICKS 1 OF THE 4 SHUFFLED EMOJIS -->
-        <div id="eq-guesser-view" style="display: none; background: rgba(15, 23, 42, 0.85); padding: 14px; border-radius: 12px; border: 1px solid var(--glass-border); margin-bottom: 12px;">
+        <div id="eq-guesser-view" style="display: none; background: rgba(15, 23, 42, 0.88); padding: 14px; border-radius: 12px; border: 1px solid var(--glass-border); margin-bottom: 12px;">
             <div id="eq-guess-prompt" style="font-size: 1rem; font-weight: 700; margin-bottom: 10px;">Pick the secret right emoji!</div>
             <div class="eq-guess-grid" id="eq-guess-options"></div>
         </div>
 
         <!-- VIEW 4: TURN RESULT -->
-        <div id="eq-result-view" style="display: none; background: rgba(15, 23, 42, 0.85); padding: 18px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); margin-bottom: 12px;">
+        <div id="eq-result-view" style="display: none; background: rgba(15, 23, 42, 0.88); padding: 18px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); margin-bottom: 12px;">
             <div id="eq-result-emoji" style="font-size: 2.8rem; margin-bottom: 6px;">🎯</div>
             <div id="eq-result-title" style="font-size: 1.15rem; font-weight: 800; margin-bottom: 4px;"></div>
             <div id="eq-result-sub" style="font-size: 0.9rem; color: #94a3b8;"></div>
@@ -1120,9 +1137,9 @@
 
         <!-- WHATSAPP WHOT INVITE CONTAINER -->
         <div id="whot-whatsapp-invite-box" style="display: none; margin-bottom: 15px; padding: 12px; background: rgba(15, 23, 42, 0.75); border: 1px solid #25D366; border-radius: 8px;">
-            <p style="margin: 0 0 8px 0; font-size: 0.85rem; color: #25D366; font-family:'Orbitron',sans-serif;">📱 Want to challenge a friend?</p>
+            <p style="margin: 0 0 8px 0; font-size: 0.85rem; color: #25D366; font-family:'Orbitron',sans-serif;">📱 Want to challenge a friend privately?</p>
             <button class="btn" style="background: linear-gradient(45deg, #128C7E, #25D366); color: #fff; margin-top: 0; padding: 10px; font-size: 0.85rem;" onclick="shareWhotWhatsAppInvite()">
-                📲 Send Whot WhatsApp Challenge
+                📲 Create &amp; Share WhatsApp Challenge
             </button>
         </div>
 
@@ -1403,9 +1420,9 @@
 
         <!-- WHATSAPP INVITE CONTAINER -->
         <div id="whatsapp-invite-box" style="display: none; margin-bottom: 15px; padding: 12px; background: rgba(37, 211, 102, 0.1); border: 1px solid #25D366; border-radius: 8px;">
-            <p style="margin: 0 0 8px 0; font-size: 0.85rem; color: #25D366; font-family:'Orbitron',sans-serif;">📱 Want to play with a friend?</p>
+            <p style="margin: 0 0 8px 0; font-size: 0.85rem; color: #25D366; font-family:'Orbitron',sans-serif;">📱 Want to play with a friend privately?</p>
             <button class="btn" style="background: linear-gradient(45deg, #128C7E, #25D366); color: #fff; margin-top: 0; padding: 10px; font-size: 0.85rem;" onclick="shareWhatsAppInvite()">
-                📲 Send WhatsApp Challenge Link
+                📲 Create &amp; Share WhatsApp Link
             </button>
         </div>
 
@@ -1622,6 +1639,7 @@
         const code = pendingChallenge;
         pendingChallenge = null;
 
+        socket.emit('register_session', { username: currentUser });
         socket.emit('accept_challenge', { username: currentUser, challengeCode: code }, (res) => {
             if (res && res.success) {
                 if (res.gameType === 'whot') {
@@ -1854,6 +1872,7 @@
     function joinEqQueue(stakeAmount, roomTitle) {
         const username = localStorage.getItem('emoji_current_user_secure');
         if (!username) return alert("Please log in first!");
+        currentUser = username;
 
         let userObj = getCurrentUserObj();
         if (userObj.balance < stakeAmount) {
@@ -1866,6 +1885,7 @@
         selectedGroupName = roomTitle;
         activeGameMode = 'emoji-question';
         gameActive = false;
+        activeChallengeCode = null;
         eqSelectedEmojis = [];
         eqSecretEmoji = null;
 
@@ -1884,27 +1904,30 @@
         showEqSubView('eq-waiting-view');
         document.getElementById('eq-waiting-text').innerText = 'Finding a 1v1 rival...';
 
+        socket.emit('register_session', { username });
         socket.emit('join_queue', {
             username,
             stake: stakeAmount,
             gameType: 'emoji-question'
         });
-
-        socket.emit('create_challenge', { username, stake: stakeAmount, gameType: 'emoji-question' }, (res) => {
-            if (res && res.success) {
-                activeChallengeCode = res.challengeCode;
-            }
-        });
     }
 
     function shareEqWhatsAppInvite() {
-        if (!activeChallengeCode) {
-            alert("Waiting room link is initializing, please try again in a moment.");
+        const stakeText = selectedStake ? `₦${selectedStake.toLocaleString()}` : 'our match';
+        if (activeChallengeCode) {
+            const text = encodeURIComponent(`🧠 Join my private Emoji Question 1v1 match! Stake: ${stakeText}. Click here to join: ${window.location.origin}/?challenge=${activeChallengeCode}&ref=${encodeURIComponent(currentUser)}`);
+            window.open(`https://wa.me/?text=${text}`, '_blank');
             return;
         }
-        const stakeText = selectedStake ? `₦${selectedStake.toLocaleString()}` : 'our match';
-        const text = encodeURIComponent(`🧠 Join my private Emoji Question 1v1 match! Stake: ${stakeText}. Click here to join: ${window.location.origin}/?challenge=${activeChallengeCode}&ref=${encodeURIComponent(currentUser)}`);
-        window.open(`https://wa.me/?text=${text}`, '_blank');
+        socket.emit('create_challenge', { username: currentUser, stake: selectedStake, gameType: 'emoji-question' }, (res) => {
+            if (res && res.success) {
+                activeChallengeCode = res.challengeCode;
+                const text = encodeURIComponent(`🧠 Join my private Emoji Question 1v1 match! Stake: ${stakeText}. Click here to join: ${window.location.origin}/?challenge=${activeChallengeCode}&ref=${encodeURIComponent(currentUser)}`);
+                window.open(`https://wa.me/?text=${text}`, '_blank');
+            } else {
+                alert("Could not generate invite link right now.");
+            }
+        });
     }
 
     socket.on('eq:turn_start', (data) => {
@@ -2096,12 +2119,14 @@
         selectedStake = stakeAmount;
         selectedGroupName = groupName;
         activeGameMode = 'treasure';
+        activeChallengeCode = null;
 
         const username = localStorage.getItem('emoji_current_user_secure');
         if (!username) {
             alert("Please log in first!");
             return;
         }
+        currentUser = username;
 
         let userObj = getCurrentUserObj();
         if (userObj.balance < stakeAmount) {
@@ -2132,16 +2157,11 @@
 
         gameActive = false;
 
+        socket.emit('register_session', { username });
         socket.emit('join_queue', {
             username: username,
             stake: stakeAmount,
             gameType: 'treasure'
-        });
-
-        socket.emit('create_challenge', { username, stake: stakeAmount, gameType: 'treasure' }, (res) => {
-            if (res && res.success) {
-                activeChallengeCode = res.challengeCode;
-            }
         });
     }
 
@@ -2207,23 +2227,39 @@
     });
 
     function shareWhatsAppInvite() {
-        if (!activeChallengeCode) {
-            alert("Waiting room link is initializing, please try again in a moment.");
+        const stakeText = selectedStake ? `₦${selectedStake.toLocaleString()}` : 'our match';
+        if (activeChallengeCode) {
+            const text = encodeURIComponent(`Bro, join my private 1v1 match on Emoji Treasure Hunt! Stake: ${stakeText}. Click here to play and register/deposit: ${window.location.origin}/?challenge=${activeChallengeCode}&ref=${encodeURIComponent(currentUser)}`);
+            window.open(`https://wa.me/?text=${text}`, '_blank');
             return;
         }
-        const stakeText = selectedStake ? `₦${selectedStake.toLocaleString()}` : 'our match';
-        const text = encodeURIComponent(`Bro, join my private 1v1 match on Emoji Treasure Hunt! Stake: ${stakeText}. Click here to play and register/deposit: ${window.location.origin}/?challenge=${activeChallengeCode}&ref=${encodeURIComponent(currentUser)}`);
-        window.open(`https://wa.me/?text=${text}`, '_blank');
+        socket.emit('create_challenge', { username: currentUser, stake: selectedStake, gameType: 'treasure' }, (res) => {
+            if (res && res.success) {
+                activeChallengeCode = res.challengeCode;
+                const text = encodeURIComponent(`Bro, join my private 1v1 match on Emoji Treasure Hunt! Stake: ${stakeText}. Click here to play and register/deposit: ${window.location.origin}/?challenge=${activeChallengeCode}&ref=${encodeURIComponent(currentUser)}`);
+                window.open(`https://wa.me/?text=${text}`, '_blank');
+            } else {
+                alert("Could not generate invite link right now.");
+            }
+        });
     }
 
     function shareWhotWhatsAppInvite() {
-        if (!activeChallengeCode) {
-            alert("Waiting room link is initializing, please try again in a moment.");
+        const stakeText = selectedStake ? `₦${selectedStake.toLocaleString()}` : 'our match';
+        if (activeChallengeCode) {
+            const text = encodeURIComponent(`🎮 Join my private Naija Whot 1v1 match! Stake: ${stakeText}. Click here to join: ${window.location.origin}/?challenge=${activeChallengeCode}&ref=${encodeURIComponent(currentUser)}`);
+            window.open(`https://wa.me/?text=${text}`, '_blank');
             return;
         }
-        const stakeText = selectedStake ? `₦${selectedStake.toLocaleString()}` : 'our match';
-        const text = encodeURIComponent(`🎮 Join my private Naija Whot 1v1 match! Stake: ${stakeText}. Click here to join: ${window.location.origin}/?challenge=${activeChallengeCode}&ref=${encodeURIComponent(currentUser)}`);
-        window.open(`https://wa.me/?text=${text}`, '_blank');
+        socket.emit('create_challenge', { username: currentUser, stake: selectedStake, gameType: 'whot' }, (res) => {
+            if (res && res.success) {
+                activeChallengeCode = res.challengeCode;
+                const text = encodeURIComponent(`🎮 Join my private Naija Whot 1v1 match! Stake: ${stakeText}. Click here to join: ${window.location.origin}/?challenge=${activeChallengeCode}&ref=${encodeURIComponent(currentUser)}`);
+                window.open(`https://wa.me/?text=${text}`, '_blank');
+            } else {
+                alert("Could not generate invite link right now.");
+            }
+        });
     }
 
     function updateTurnDisplay() {
@@ -3457,6 +3493,7 @@
     function joinWhotQueue(stakeAmount, roomTitle) {
         const username = localStorage.getItem('emoji_current_user_secure');
         if (!username) return alert("Please log in first!");
+        currentUser = username;
 
         let userObj = getCurrentUserObj();
         if (userObj.balance < stakeAmount) {
@@ -3468,6 +3505,7 @@
         selectedStake = stakeAmount;
         activeGameMode = 'whot';
         gameActive = false;
+        activeChallengeCode = null;
         lastWhotAction = '';
         switchScreen('whot-game-screen');
         document.getElementById('whot-opponent-name').innerText = 'Searching...';
@@ -3476,16 +3514,11 @@
         document.getElementById('whot-my-hand').innerHTML = '';
         document.getElementById('whot-whatsapp-invite-box').style.display = 'block';
 
+        socket.emit('register_session', { username });
         socket.emit('join_queue', {
             username,
             stake: stakeAmount,
             gameType: 'whot'
-        });
-
-        socket.emit('create_challenge', { username, stake: stakeAmount, gameType: 'whot' }, (res) => {
-            if (res && res.success) {
-                activeChallengeCode = res.challengeCode;
-            }
         });
     }
 
@@ -3500,7 +3533,6 @@
         document.getElementById('whot-action-log').innerText = state.lastAction || '';
         document.getElementById('whot-whatsapp-invite-box').style.display = 'none';
 
-        // Trigger laughing emoji popup when any player serves (Whot 20), Hold On (1), Pick Two (2), or General Market (14)
         if (state.lastAction && state.lastAction !== lastWhotAction) {
             lastWhotAction = state.lastAction;
             const la = state.lastAction.toLowerCase();
