@@ -23,10 +23,10 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 
 const saltRounds = 10;
 
-// Emoji Question constants
-const EQ_QUESTIONS_PER_MATCH = 12;
-const EQ_TURN_TIME = 10;
-const EQ_AI_TIMEOUT_MS = 150000;
+// Emoji Question 1v1 (4-Emoji Pick & Guess) constants
+const EQ_TOTAL_TURNS = 6; // 3 full rounds (each player sets 3x and guesses 3x)
+const EQ_SET_SECONDS = 15;
+const EQ_GUESS_SECONDS = 12;
 
 // Temporary memory store for OTP verification codes
 let otpStorage = {};
@@ -54,8 +54,52 @@ const makeHttpsRequest = (options, postData = null) => {
 };
 
 // ==========================================
-// EMOJI QUESTION PURE-AI RIDDLE GENERATOR
+// FULL EMOJI POOL & 4-EMOJI 1v1 HELPERS
 // ==========================================
+function buildAllEmojisPool() {
+    const emojis = [];
+    const seen = new Set();
+
+    const addCodePoint = (cp) => {
+        try {
+            const ch = String.fromCodePoint(cp);
+            if (!seen.has(ch)) {
+                seen.add(ch);
+                emojis.push(ch);
+            }
+        } catch (_) {}
+    };
+
+    const addRange = (start, end) => {
+        for (let cp = start; cp <= end; cp++) {
+            addCodePoint(cp);
+        }
+    };
+
+    addRange(0x1F600, 0x1F64F); // Faces & Emoticons
+    addRange(0x1F300, 0x1F5FF); // Misc Symbols & Pictographs
+    addRange(0x1F680, 0x1F6FF); // Transport & Map Symbols
+    addRange(0x1F900, 0x1F9FF); // Supplemental Symbols & Pictographs
+    addRange(0x1FA70, 0x1FAFF); // Symbols & Pictographs Extended-A
+    addRange(0x2600, 0x26FF);   // Misc Symbols
+    addRange(0x2700, 0x27BF);   // Dingbats
+
+    // Country Flag pairs (Regional Indicators A-Z)
+    for (let i = 0x1F1E6; i <= 0x1F1FF; i++) {
+        for (let j = 0x1F1E6; j <= 0x1F1FF; j++) {
+            const flag = String.fromCodePoint(i) + String.fromCodePoint(j);
+            if (!seen.has(flag)) {
+                seen.add(flag);
+                emojis.push(flag);
+            }
+        }
+    }
+
+    return emojis;
+}
+
+const EMOJI_POOL = buildAllEmojisPool();
+
 function shuffleArray(arr) {
     const copy = [...arr];
     for (let i = copy.length - 1; i > 0; i--) {
@@ -65,116 +109,12 @@ function shuffleArray(arr) {
     return copy;
 }
 
-function normalizeAiQuestions(rawList) {
-    if (!Array.isArray(rawList) || rawList.length < EQ_QUESTIONS_PER_MATCH) {
-        return null;
-    }
-
-    const formatted = [];
-    for (let i = 0; i < EQ_QUESTIONS_PER_MATCH; i++) {
-        const item = rawList[i];
-        if (
-            !item ||
-            typeof item.prompt !== 'string' || !item.prompt.trim() ||
-            typeof item.answer !== 'string' || !item.answer.trim()
-        ) {
-            return null;
-        }
-
-        const answer = item.answer.trim();
-        const rawDecoys = Array.isArray(item.decoys) ? item.decoys : [];
-        const uniqueDecoys = [...new Set(
-            rawDecoys
-                .map(d => (typeof d === 'string' ? d.trim() : ''))
-                .filter(d => d && d !== answer)
-        )].slice(0, 11);
-
-        if (uniqueDecoys.length < 11) {
-            return null;
-        }
-
-        formatted.push({
-            id: i + 1,
-            prompt: item.prompt.trim(),
-            answer,
-            options: shuffleArray([answer, ...uniqueDecoys])
-        });
-    }
-
-    return formatted;
-}
-
-async function requestAiBatch(apiKey, modelPath, stake, timeoutMs) {
-    const prompt = `Generate 12 very difficult, unique emoji riddle questions for a competitive 1v1 trivia game (Stake: ₦${Number(stake).toLocaleString()}).
-Random seed: ${Date.now()}-${Math.random().toString(36).slice(2, 8)}
-Return ONLY a valid JSON array of 12 objects with no markdown formatting. Each object must have:
-- "prompt": A clever, nuanced sentence or riddle (10 to 15 words) that requires a single exact emoji to match its meaning or vibe.
-- "answer": 1 exact single emoji that is the correct answer.
-- "decoys": An array of 11 OTHER single emojis that look visually very similar or share the exact same category/theme to confuse the player (no duplicate emojis).`;
-
-    const url = `https://generativelanguage.googleapis.com/v1beta/${modelPath}:generateContent?key=${encodeURIComponent(apiKey)}`;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-    try {
-        console.log(`[EmojiQuestion] Requesting 12 AI questions from ${modelPath}...`);
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: {
-                    responseMimeType: 'application/json',
-                    temperature: 1.0
-                }
-            }),
-            signal: controller.signal
-        });
-
-        const data = await response.json();
-        if (!response.ok) {
-            throw new Error(data.error?.message || `HTTP ${response.status}`);
-        }
-
-        const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        const cleanJson = rawText.replace(/```json|```/g, '').trim();
-        const normalized = normalizeAiQuestions(JSON.parse(cleanJson));
-
-        if (!normalized) {
-            throw new Error('AI response did not contain 12 complete questions with 11 unique decoys each.');
-        }
-
-        return normalized;
-    } finally {
-        clearTimeout(timeoutId);
-    }
-}
-
-async function buildEmojiQuestionBatch(stake) {
-    const apiKey = (process.env.GEMINI_API_KEY || '').trim();
-    if (!apiKey) {
-        throw new Error('GEMINI_API_KEY is missing in .env.');
-    }
-
-    const modelsToTry = ['models/gemini-3.8-flash', 'models/gemini-3.5-flash-lite'];
-    let lastError = null;
-
-    for (const modelPath of modelsToTry) {
-        for (let attempt = 1; attempt <= 2; attempt++) {
-            try {
-                return await requestAiBatch(apiKey, modelPath, stake, EQ_AI_TIMEOUT_MS);
-            } catch (err) {
-                lastError = err;
-                const reason = err.name === 'AbortError'
-                    ? `Timed out after ${EQ_AI_TIMEOUT_MS / 1000}s`
-                    : err.message;
-                console.log(`[EmojiQuestion] ${modelPath} (Attempt ${attempt}/2) failed: ${reason}`);
-                if (attempt < 2) await new Promise(r => setTimeout(r, 2000));
-            }
-        }
-    }
-
-    throw new Error(lastError?.message || 'Unable to generate AI riddles right now.');
+function getRandomFallbackEmojiSet() {
+    const picked = shuffleArray(EMOJI_POOL).slice(0, 4);
+    return {
+        emojis: picked,
+        secretEmoji: picked[0]
+    };
 }
 
 async function refundMatchStakes(room, reasonDesc) {
@@ -605,31 +545,45 @@ function emitWhotState(roomId) {
     });
 }
 
-function clearEmojiQuestionTimers(room) {
-    if (room && room.timerInterval) {
-        clearInterval(room.timerInterval);
-        room.timerInterval = null;
+// ==========================================
+// 4-EMOJI PICK-AND-GUESS 1v1 GAME LOOP
+// ==========================================
+function clearEqRoomTimer(room) {
+    if (room && room.timer) {
+        clearTimeout(room.timer);
+        room.timer = null;
     }
 }
 
-async function finishEmojiQuestionMatch(roomId) {
+function getEqScoresArray(room) {
+    return room.players.map((username, idx) => ({
+        username,
+        score: room.scores[idx + 1] || 0
+    }));
+}
+
+async function finishEqMatch(roomId) {
     const room = activeRooms[roomId];
     if (!room || room.gameType !== 'emoji-question') return;
 
-    clearEmojiQuestionTimers(room);
+    clearEqRoomTimer(room);
     delete activeRooms[roomId];
 
     const [p1Username, p2Username] = room.players;
     const s1 = room.scores[1] || 0;
     const s2 = room.scores[2] || 0;
+    const scoresArr = getEqScoresArray(room);
 
     if (s1 === s2) {
         try {
             await refundMatchStakes(room, 'Emoji Question 1v1 tied - Stake refunded');
-            io.to(roomId).emit('eq_game_over', {
+            io.to(roomId).emit('eq:match_over', {
+                roomId,
+                winnerId: null,
+                winnerName: null,
                 winner: null,
                 reason: 'draw',
-                scores: room.scores
+                scores: scoresArr
             });
         } catch (err) {
             console.error('Error refunding tied Emoji Question match:', err);
@@ -640,10 +594,13 @@ async function finishEmojiQuestionMatch(roomId) {
     const winner = s1 > s2 ? p1Username : p2Username;
     try {
         const payoutInfo = await settleMatchWinner(room, winner, 'Emoji Question 1v1');
-        io.to(roomId).emit('eq_game_over', {
+        io.to(roomId).emit('eq:match_over', {
+            roomId,
+            winnerId: winner,
+            winnerName: winner,
             winner,
             reason: 'completed',
-            scores: room.scores,
+            scores: scoresArr,
             netWinnings: payoutInfo.netWinnings,
             feeCharged: payoutInfo.feeCharged,
             commissionPercent: payoutInfo.commissionPercent
@@ -653,86 +610,135 @@ async function finishEmojiQuestionMatch(roomId) {
     }
 }
 
-function startEmojiQuestionTurn(roomId) {
+function advanceEqTurn(roomId) {
     const room = activeRooms[roomId];
     if (!room || room.gameType !== 'emoji-question') return;
+    clearEqRoomTimer(room);
 
-    clearEmojiQuestionTimers(room);
-
-    if (room.questionIndex >= EQ_QUESTIONS_PER_MATCH) {
-        finishEmojiQuestionMatch(roomId);
-        return;
+    // After normal 6 turns (3 rounds), end if scores are unequal; otherwise continue sudden death
+    if (room.turnNumber >= EQ_TOTAL_TURNS && room.turnNumber % 2 === 0) {
+        const s1 = room.scores[1] || 0;
+        const s2 = room.scores[2] || 0;
+        if (s1 !== s2) {
+            return finishEqMatch(roomId);
+        }
     }
 
-    const turnPlayerNum = (room.questionIndex % 2) + 1;
-    const turnUsername = room.players[turnPlayerNum - 1];
-    const currentQuestion = room.matchQuestions[room.questionIndex];
-    room.timeLeft = EQ_TURN_TIME;
+    room.turnNumber += 1;
+    room.setterIndex = (room.turnNumber - 1) % 2;
+    room.phase = 'SETTING';
+    room.chosenEmojis = [];
+    room.shuffledEmojis = [];
+    room.secretEmoji = null;
 
-    room.players.forEach((playerUsername, idx) => {
-        const sid = activeUserSessions[playerUsername];
-        if (sid) {
-            io.to(sid).emit('eq_new_turn', {
-                roomId,
-                playerNum: idx + 1,
-                players: room.players,
-                questionNumber: room.questionIndex + 1,
-                totalQuestions: EQ_QUESTIONS_PER_MATCH,
-                turnPlayer: turnPlayerNum,
-                turnUsername,
-                prompt: currentQuestion.prompt,
-                options: currentQuestion.options,
-                scores: room.scores,
-                timeLeft: room.timeLeft
-            });
-        }
+    const setterName = room.players[room.setterIndex];
+    const guesserName = room.players[1 - room.setterIndex];
+    const roundNumber = Math.ceil(room.turnNumber / 2);
+    const isSuddenDeath = room.turnNumber > EQ_TOTAL_TURNS;
+
+    io.to(roomId).emit('eq:turn_start', {
+        roomId,
+        turnNumber: room.turnNumber,
+        roundNumber,
+        isSuddenDeath,
+        phase: 'SETTING',
+        seconds: EQ_SET_SECONDS,
+        setterId: setterName,
+        setterName,
+        guesserId: guesserName,
+        guesserName,
+        scores: getEqScoresArray(room),
+        emojiPool: EMOJI_POOL
     });
 
-    room.timerInterval = setInterval(() => {
-        if (!activeRooms[roomId]) {
-            clearEmojiQuestionTimers(room);
-            return;
-        }
-        room.timeLeft--;
-        if (room.timeLeft <= 0) {
-            clearEmojiQuestionTimers(room);
-            room.questionIndex++;
-            startEmojiQuestionTurn(roomId);
-        }
-    }, 1000);
+    room.timer = setTimeout(() => {
+        if (!activeRooms[roomId] || room.phase !== 'SETTING') return;
+        const fallback = getRandomFallbackEmojiSet();
+        beginEqGuessPhase(roomId, fallback.emojis, fallback.secretEmoji, true);
+    }, EQ_SET_SECONDS * 1000);
 }
 
-async function beginEmojiQuestionMatch(roomId) {
+function beginEqGuessPhase(roomId, emojis, secretEmoji, wasAutoPicked = false) {
     const room = activeRooms[roomId];
-    if (!room || room.gameType !== 'emoji-question') return;
+    if (!room || room.gameType !== 'emoji-question' || room.phase !== 'SETTING') return;
+    clearEqRoomTimer(room);
 
-    io.to(roomId).emit('eq_generating', {
+    room.phase = 'GUESSING';
+    room.chosenEmojis = emojis;
+    room.secretEmoji = secretEmoji;
+    room.shuffledEmojis = shuffleArray(emojis);
+
+    const setterName = room.players[room.setterIndex];
+    const guesserName = room.players[1 - room.setterIndex];
+
+    // Send ONLY the 4 shuffled emojis to clients (never leak secretEmoji before resolution)
+    io.to(roomId).emit('eq:guess_phase', {
         roomId,
-        players: room.players,
-        stake: room.stake
+        turnNumber: room.turnNumber,
+        phase: 'GUESSING',
+        seconds: EQ_GUESS_SECONDS,
+        setterId: setterName,
+        setterName,
+        guesserId: guesserName,
+        guesserName,
+        options: room.shuffledEmojis,
+        wasAutoPicked
     });
 
-    try {
-        const questions = await buildEmojiQuestionBatch(room.stake);
-        if (!activeRooms[roomId]) return;
-        room.matchQuestions = questions;
-        room.questionIndex = 0;
-        room.scores = { 1: 0, 2: 0 };
-        startEmojiQuestionTurn(roomId);
-    } catch (err) {
-        console.error(`[EmojiQuestion:${roomId}] Generation failed:`, err.message);
-        if (activeRooms[roomId]) {
-            delete activeRooms[roomId];
-            try {
-                await refundMatchStakes(room, 'Emoji Question AI generation error - Stake refunded');
-            } catch (refundErr) {
-                console.error('Error refunding after AI generation failure:', refundErr);
-            }
-            io.to(roomId).emit('eq_generation_error', {
-                message: `Reason: ${err.message} (Your stake has been refunded.)`
-            });
-        }
+    room.timer = setTimeout(() => {
+        if (!activeRooms[roomId] || room.phase !== 'GUESSING') return;
+        resolveEqTurn(roomId, null, true);
+    }, EQ_GUESS_SECONDS * 1000);
+}
+
+function resolveEqTurn(roomId, guessedEmoji, timedOut = false) {
+    const room = activeRooms[roomId];
+    if (!room || room.gameType !== 'emoji-question' || room.phase !== 'GUESSING') return;
+    clearEqRoomTimer(room);
+
+    room.phase = 'RESULT';
+    const setterPlayerNum = room.setterIndex + 1;
+    const guesserPlayerNum = (1 - room.setterIndex) + 1;
+    const setterName = room.players[room.setterIndex];
+    const guesserName = room.players[1 - room.setterIndex];
+
+    const isCorrect = !timedOut && guessedEmoji === room.secretEmoji;
+
+    // Asymmetric scoring: +1 to guesser on right pick; +1 to setter on miss or timeout
+    if (isCorrect) {
+        room.scores[guesserPlayerNum] = (room.scores[guesserPlayerNum] || 0) + 1;
+    } else {
+        room.scores[setterPlayerNum] = (room.scores[setterPlayerNum] || 0) + 1;
     }
+
+    const pointWinnerName = isCorrect ? guesserName : setterName;
+
+    io.to(roomId).emit('eq:turn_result', {
+        roomId,
+        turnNumber: room.turnNumber,
+        isCorrect,
+        timedOut,
+        guessedEmoji,
+        secretEmoji: room.secretEmoji,
+        pointWinnerId: pointWinnerName,
+        pointWinnerName,
+        scores: getEqScoresArray(room)
+    });
+
+    room.timer = setTimeout(() => {
+        if (!activeRooms[roomId]) return;
+        advanceEqTurn(roomId);
+    }, 2500);
+}
+
+function startEqMatch(roomId) {
+    const room = activeRooms[roomId];
+    if (!room || room.gameType !== 'emoji-question') return;
+    room.turnNumber = 0;
+    room.setterIndex = 0;
+    room.phase = 'SETTING';
+    room.scores = { 1: 0, 2: 0 };
+    advanceEqTurn(roomId);
 }
 
 // ==========================================
@@ -922,13 +928,16 @@ io.on('connection', (socket) => {
                     gameType: 'emoji-question',
                     players: [player1.username, player2.username],
                     stake: numericStake,
-                    matchQuestions: [],
-                    questionIndex: 0,
+                    turnNumber: 0,
+                    setterIndex: 0,
+                    phase: 'SETTING',
+                    chosenEmojis: [],
+                    shuffledEmojis: [],
+                    secretEmoji: null,
                     scores: { 1: 0, 2: 0 },
-                    timeLeft: EQ_TURN_TIME,
-                    timerInterval: null
+                    timer: null
                 };
-                beginEmojiQuestionMatch(roomId);
+                startEqMatch(roomId);
             } else {
                 const targetEmojis = ['💎', '🔑', '👑', '🪙', '🏆'];
                 const targetEmoji = targetEmojis[Math.floor(Math.random() * targetEmojis.length)];
@@ -1358,13 +1367,16 @@ io.on('connection', (socket) => {
                         gameType: 'emoji-question',
                         players: [player1.username, player2.username],
                         stake: numericStake,
-                        matchQuestions: [],
-                        questionIndex: 0,
+                        turnNumber: 0,
+                        setterIndex: 0,
+                        phase: 'SETTING',
+                        chosenEmojis: [],
+                        shuffledEmojis: [],
+                        secretEmoji: null,
                         scores: { 1: 0, 2: 0 },
-                        timeLeft: EQ_TURN_TIME,
-                        timerInterval: null
+                        timer: null
                     };
-                    beginEmojiQuestionMatch(roomId);
+                    startEqMatch(roomId);
                 } else {
                     const targetEmojis = ['💎', '🔑', '👑', '🪙', '🏆'];
                     const targetEmoji = targetEmojis[Math.floor(Math.random() * targetEmojis.length)];
@@ -1396,27 +1408,37 @@ io.on('connection', (socket) => {
     });
 
     // ==========================================
-    // EMOJI QUESTION 1v1 EVENTS
+    // EMOJI QUESTION 1v1 (4-EMOJI PICK & GUESS) EVENTS
     // ==========================================
-    socket.on('eq_select_emoji', (data) => {
+    socket.on('eq:submit_set', (data) => {
+        const { roomId, username, emojis, secretEmoji } = data || {};
+        const room = activeRooms[roomId];
+        if (!room || room.gameType !== 'emoji-question' || room.phase !== 'SETTING') return;
+
+        const setterName = room.players[room.setterIndex];
+        const actorName = username || socket.authUsername;
+        if (actorName !== setterName) return;
+
+        if (!Array.isArray(emojis) || emojis.length !== 4) return;
+        const uniqueEmojis = [...new Set(emojis)];
+        if (uniqueEmojis.length !== 4) return;
+        if (!uniqueEmojis.every((e) => EMOJI_POOL.includes(e))) return;
+        if (!uniqueEmojis.includes(secretEmoji)) return;
+
+        beginEqGuessPhase(roomId, uniqueEmojis, secretEmoji, false);
+    });
+
+    socket.on('eq:submit_guess', (data) => {
         const { roomId, username, emoji } = data || {};
         const room = activeRooms[roomId];
-        if (!room || room.gameType !== 'emoji-question') return;
-        if (!Array.isArray(room.matchQuestions) || !room.matchQuestions[room.questionIndex]) return;
+        if (!room || room.gameType !== 'emoji-question' || room.phase !== 'GUESSING') return;
 
-        const turnPlayerNum = (room.questionIndex % 2) + 1;
-        const expectedUsername = room.players[turnPlayerNum - 1];
-        if (username !== expectedUsername) return;
+        const guesserName = room.players[1 - room.setterIndex];
+        const actorName = username || socket.authUsername;
+        if (actorName !== guesserName) return;
+        if (!room.shuffledEmojis.includes(emoji)) return;
 
-        clearEmojiQuestionTimers(room);
-        const currentQuestion = room.matchQuestions[room.questionIndex];
-
-        if (typeof emoji === 'string' && emoji.trim() === currentQuestion.answer) {
-            room.scores[turnPlayerNum] = (room.scores[turnPlayerNum] || 0) + 10;
-        }
-
-        room.questionIndex++;
-        startEmojiQuestionTurn(roomId);
+        resolveEqTurn(roomId, emoji, false);
     });
 
     // ==========================================
@@ -1788,7 +1810,7 @@ io.on('connection', (socket) => {
             for (const [roomId, room] of Object.entries(activeRooms)) {
                 if (room.players.includes(socket.authUsername)) {
                     const winner = room.players.find(p => p !== socket.authUsername);
-                    clearEmojiQuestionTimers(room);
+                    clearEqRoomTimer(room);
                     delete activeRooms[roomId];
                     try {
                         if (room.gameType === 'whot') {
@@ -1802,10 +1824,14 @@ io.on('connection', (socket) => {
                             });
                         } else if (room.gameType === 'emoji-question') {
                             const payoutInfo = await settleMatchWinner(room, winner, 'Emoji Question 1v1 (Opponent Disconnected)');
-                            io.to(roomId).emit('eq_game_over', {
+                            io.to(roomId).emit('eq:match_over', {
+                                roomId,
+                                winnerId: winner,
+                                winnerName: winner,
                                 winner,
                                 reason: 'opponent_disconnected',
-                                scores: room.scores,
+                                forfeit: true,
+                                scores: getEqScoresArray(room),
                                 netWinnings: payoutInfo.netWinnings,
                                 feeCharged: payoutInfo.feeCharged,
                                 commissionPercent: payoutInfo.commissionPercent

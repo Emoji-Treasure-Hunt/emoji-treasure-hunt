@@ -298,7 +298,7 @@
             display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.4); padding: 12px 20px; border-radius: 8px; margin-bottom: 15px; border: 1px solid var(--glass-border);
         }
         .turn-indicator-box {
-            background: rgba(0,0,0,0.5); padding: 10px 15px; border-radius: 8px; border: 2px solid #334155; margin-bottom: 20px; font-size: 1.1rem; text-transform: uppercase; text-align: center;
+            background: rgba(0,0,0,0.5); padding: 10px 15px; border-radius: 8px; border: 2px solid #334155; margin-bottom: 16px; font-size: 1.05rem; text-transform: uppercase; text-align: center;
         }
         .target-display {
             background: rgba(0,0,0,0.6); padding: 6px 12px; border-radius: 6px; border: 1px solid var(--neon-blue); display: inline-flex; align-items: center; gap: 8px; font-family: 'Orbitron', sans-serif; text-shadow: 0 0 5px var(--neon-blue);
@@ -312,7 +312,35 @@
         .timer { color: #fff; font-family: 'Orbitron', sans-serif; font-size: 1.4rem; animation: pulse 1s infinite; }
 
         .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 25px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 12px; }
-        .eq-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 20px; padding: 10px; background: rgba(0,0,0,0.25); border-radius: 12px; }
+        .eq-slots-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
+        .eq-pool-grid {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 6px;
+            max-height: 240px;
+            overflow-y: auto;
+            padding: 8px;
+            background: rgba(0,0,0,0.35);
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        .eq-pool-grid::-webkit-scrollbar { width: 5px; }
+        .eq-pool-grid::-webkit-scrollbar-thumb { background: var(--neon-blue); border-radius: 10px; }
+        .eq-pool-btn {
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 7px;
+            font-size: 1.35rem;
+            padding: 6px 0;
+            cursor: pointer;
+            color: #fff;
+            transition: transform 0.12s, border-color 0.12s;
+        }
+        .eq-pool-btn:hover { transform: scale(1.08); border-color: var(--neon-blue); }
+        .eq-pool-btn.picked { background: rgba(2, 132, 199, 0.35); border-color: var(--neon-blue); }
+        .eq-pool-btn.secret { background: rgba(250, 204, 21, 0.25); border-color: var(--neon-gold); box-shadow: 0 0 8px rgba(250, 204, 21, 0.45); }
+        .eq-guess-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 10px; }
+
         .box {
             aspect-ratio: 1; background: linear-gradient(135deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.9)); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; font-size: 1.6rem; cursor: pointer; display: flex; align-items: center; justify-content: center; user-select: none; transition: all 0.15s ease;
         }
@@ -547,7 +575,7 @@
         <div class="group-card" onclick="selectGame('emoji-question')" style="cursor: pointer;">
             <div class="group-info">
                 <h3>🧠 Emoji Question 1v1</h3>
-                <p>Crack AI riddles & pick the exact emoji under pressure!</p>
+                <p>Pick 4 emojis &amp; outsmart your rival in 3 rounds!</p>
             </div>
             <button class="group-btn">Play</button>
         </div>
@@ -555,7 +583,7 @@
         <div class="group-card" onclick="selectGame('whot')" style="cursor: pointer;">
             <div class="group-info">
                 <h3>🃏 Naija Whot 1v1</h3>
-                <p>Fast-paced card duel with Pick Two & General Market.</p>
+                <p>Fast-paced card duel with Pick Two &amp; General Market.</p>
             </div>
             <button class="group-btn">Play</button>
         </div>
@@ -658,7 +686,7 @@
     <!-- EMOJI QUESTION 1v1 LOBBY SCREEN -->
     <div id="eq-lobby-screen" class="screen-section">
         <h1><span class="app-logo">🧠</span> Emoji Question 1v1</h1>
-        <div class="subtitle">12 AI Riddles • Alternating 10s Turns</div>
+        <div class="subtitle">3 Rounds (6 Turns) • 4-Emoji Pick &amp; Guess</div>
 
         <div class="user-panel">
             <span>👤 <strong id="eq-lobby-user"></strong></span>
@@ -738,7 +766,7 @@
         </div>
     </div>
 
-    <!-- EMOJI QUESTION ACTIVE 1v1 ARENA SCREEN -->
+    <!-- EMOJI QUESTION ACTIVE 1v1 ARENA SCREEN (4-EMOJI PICK & GUESS) -->
     <div id="eq-game-screen" class="screen-section">
         <h1 id="eq-active-title">Emoji Question 1v1</h1>
         <div class="user-panel">
@@ -752,15 +780,15 @@
 
         <div class="game-header">
             <div class="target-display">
-                <span>Q:</span> <span id="eq-q-counter">0/12</span>
+                <span id="eq-round-badge">Round 1/3</span>
             </div>
-            <div>Turn Time: <span class="timer" id="eq-timer">10s</span></div>
+            <div>Turn Time: <span class="timer" id="eq-timer">15s</span></div>
         </div>
 
         <div style="display: flex; justify-content: space-around; background: rgba(0,0,0,0.35); padding: 8px 12px; border-radius: 8px; margin-bottom: 12px; font-family:'Orbitron',sans-serif; font-size: 0.85rem;">
-            <div>P1: <strong id="eq-score-1" style="color: var(--neon-blue);">0</strong></div>
+            <div><span id="eq-p1-label">P1</span>: <strong id="eq-score-1" style="color: var(--neon-blue);">0</strong></div>
             <div>VS</div>
-            <div>P2: <strong id="eq-score-2" style="color: var(--neon-gold);">0</strong></div>
+            <div><span id="eq-p2-label">P2</span>: <strong id="eq-score-2" style="color: var(--neon-gold);">0</strong></div>
         </div>
 
         <div class="turn-indicator-box" id="eq-turn-banner">⏳ Waiting for opponent...</div>
@@ -773,9 +801,68 @@
             </button>
         </div>
 
-        <div id="eq-riddle-prompt" style="background: rgba(15,23,42,0.85); border: 1px solid var(--glass-border); border-radius: 10px; padding: 14px; margin-bottom: 14px; font-size: 1.05rem; color: #f8fafc; min-height: 44px;"></div>
+        <!-- VIEW 1: SETTER PICKS 4 EMOJIS & MARKS 1 SECRET RIGHT EMOJI -->
+        <div id="eq-setter-view" style="display: none; background: rgba(15, 23, 42, 0.85); padding: 14px; border-radius: 12px; border: 1px solid var(--glass-border); margin-bottom: 12px; text-align: left;">
+            <div style="font-size: 0.95rem; font-weight: 700; color: var(--neon-blue); margin-bottom: 4px;">Pick 4 Emojis &amp; Tap One as SECRET Target</div>
+            <div style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 10px;">Gold glow = secret right emoji. If rival misses or times out, you get +1!</div>
 
-        <div class="eq-grid" id="eq-emoji-grid"></div>
+            <div class="eq-slots-grid" id="eq-selected-slots"></div>
+
+            <button type="button" id="eq-lock-set-btn" class="btn btn-success" onclick="submitEqSet()" disabled style="opacity: 0.5; margin-top: 4px; margin-bottom: 12px; padding: 11px;">
+                Lock In 4 Emojis
+            </button>
+
+            <div style="display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap;">
+                <input
+                    id="eq-emoji-search"
+                    type="text"
+                    placeholder="Search or paste emoji..."
+                    oninput="renderFilteredEqPool()"
+                    style="flex: 1; min-width: 120px; padding: 8px 10px; font-size: 0.9rem;"
+                />
+                <select
+                    id="eq-emoji-category"
+                    onchange="renderFilteredEqPool()"
+                    style="width: auto; padding: 8px 8px; font-size: 0.85rem;"
+                >
+                    <option value="all">All</option>
+                    <option value="faces">Faces</option>
+                    <option value="animals">Animals</option>
+                    <option value="food">Food</option>
+                    <option value="travel">Travel</option>
+                    <option value="objects">Objects</option>
+                    <option value="flags">Flags</option>
+                </select>
+                <button
+                    type="button"
+                    onclick="clearEqEmojiFilter()"
+                    style="padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.1); color: #fff; font-size: 0.8rem; font-weight: 700; cursor: pointer;"
+                >
+                    Clear
+                </button>
+            </div>
+
+            <div class="eq-pool-grid" id="eq-emoji-grid"></div>
+        </div>
+
+        <!-- VIEW 2: WAITING SCREEN -->
+        <div id="eq-waiting-view" style="display: none; background: rgba(15, 23, 42, 0.85); padding: 24px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); margin-bottom: 12px;">
+            <div style="font-size: 2.2rem; margin-bottom: 8px;">🤔</div>
+            <div id="eq-waiting-text" style="font-size: 0.95rem; color: #cbd5e1;">Waiting for opponent...</div>
+        </div>
+
+        <!-- VIEW 3: GUESSER PICKS 1 OF THE 4 SHUFFLED EMOJIS -->
+        <div id="eq-guesser-view" style="display: none; background: rgba(15, 23, 42, 0.85); padding: 14px; border-radius: 12px; border: 1px solid var(--glass-border); margin-bottom: 12px;">
+            <div id="eq-guess-prompt" style="font-size: 1rem; font-weight: 700; margin-bottom: 10px;">Pick the secret right emoji!</div>
+            <div class="eq-guess-grid" id="eq-guess-options"></div>
+        </div>
+
+        <!-- VIEW 4: TURN RESULT -->
+        <div id="eq-result-view" style="display: none; background: rgba(15, 23, 42, 0.85); padding: 18px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); margin-bottom: 12px;">
+            <div id="eq-result-emoji" style="font-size: 2.8rem; margin-bottom: 6px;">🎯</div>
+            <div id="eq-result-title" style="font-size: 1.15rem; font-weight: 800; margin-bottom: 4px;"></div>
+            <div id="eq-result-sub" style="font-size: 0.9rem; color: #94a3b8;"></div>
+        </div>
 
         <button class="btn btn-secondary" onclick="leaveEqGame()" style="margin-top: 8px;">Back to Emoji Question Lobby</button>
         <div id="eq-message" style="margin-top: 12px; font-size: 0.95rem; min-height: 24px;"></div>
@@ -863,7 +950,7 @@
     <!-- PLAYER PROFILE SCREEN -->
     <div id="profile-screen" class="screen-section">
         <h1>👤 Player Profile</h1>
-        <div class="subtitle">Your Arcade Career & Statistics</div>
+        <div class="subtitle">Your Arcade Career &amp; Statistics</div>
 
         <div class="wallet-card">
             <div class="subtitle" style="margin-bottom: 4px;">Username</div>
@@ -936,7 +1023,7 @@
 
     <!-- REFERRAL & AFFILIATE MODAL SCREEN -->
     <div id="referral-screen" class="screen-section">
-        <h1>🎁 Refer & Earn</h1>
+        <h1>🎁 Refer &amp; Earn</h1>
         <div class="subtitle">Earn 1% of the Total Pot Every Time Your Friend Wins!</div>
 
         <div class="wallet-card" style="display: flex; justify-content: space-around; padding: 15px;">
@@ -989,7 +1076,7 @@
     <!-- ADMIN DASHBOARD SCREEN -->
     <div id="admin-dashboard-screen" class="screen-section">
         <h1>📊 Admin House Revenue</h1>
-        <div class="subtitle">Platform Profit & Withdrawal Management</div>
+        <div class="subtitle">Platform Profit &amp; Withdrawal Management</div>
         
         <div class="wallet-card">
             <div class="subtitle" style="margin-bottom: 5px;">Total House Revenue</div>
@@ -1071,11 +1158,10 @@
 
     <!-- WALLET / CASHIER SCREEN -->
     <div id="wallet-screen" class="screen-section">
-        <h1>💳 Cashier & Wallet</h1>
+        <h1>💳 Cashier &amp; Wallet</h1>
         <div class="wallet-card">
             <div class="subtitle" style="margin-bottom: 5px;">Available Balance</div>
             <div style="font-size: 1.8rem; color: var(--neon-blue); font-weight: bold;" id="cashier-wallet-balance">₦0.00</div>
-            <!-- Manual Sync / Refresh Balance Button -->
             <button class="btn btn-secondary" onclick="updateLobbyWallet()" style="margin-top: 8px; padding: 8px; font-size: 0.8rem;">🔄 Sync Balance from Database</button>
         </div>
 
@@ -1137,7 +1223,7 @@
     <!-- LEADERBOARD SCREEN -->
     <div id="leaderboard-screen" class="screen-section">
         <h1>🏆 Top Players</h1>
-        <div class="subtitle">Ranked by Wallet Balance & Earnings</div>
+        <div class="subtitle">Ranked by Wallet Balance &amp; Earnings</div>
         
         <div class="leaderboard-list" id="leaderboard-container"></div>
 
@@ -1147,7 +1233,7 @@
     <!-- TRANSACTION HISTORY SCREEN -->
     <div id="transaction-history-screen" class="screen-section">
         <h1>📜 Transaction History</h1>
-        <div class="subtitle">Your recent financial logs & game activities</div>
+        <div class="subtitle">Your recent financial logs &amp; game activities</div>
         
         <div class="leaderboard-list" id="transaction-container" style="max-height: 320px;"></div>
 
@@ -1200,7 +1286,7 @@
     let currentUser = null;
     let selectedStake = 0;
     let selectedGroupName = "Micro Lounge";
-    let activeGameMode = null; // 'treasure', 'whot', or 'emoji-question'
+    let activeGameMode = null;
     let treasureIndex = -1;
     let currentTreasureEmoji = '💎';
     let gameActive = false;
@@ -1219,6 +1305,40 @@
         '😂', '😭', '🤯', '😡', '😱', '🤡', '🤠', '🥳', '😎', '🥶', '🥴', '🥺',
         '💣', '🍌', '👻', '💀', '🐸', '💩', '🧊', '🌵', '🍅', '🧩', '🪵', '🌀'
     ];
+
+    function buildClientEmojiPool() {
+        const list = [];
+        const seen = new Set();
+        const addCp = (cp) => {
+            try {
+                const ch = String.fromCodePoint(cp);
+                if (!seen.has(ch)) {
+                    seen.add(ch);
+                    list.push(ch);
+                }
+            } catch (_) {}
+        };
+        const addRange = (start, end) => {
+            for (let cp = start; cp <= end; cp++) addCp(cp);
+        };
+        addRange(0x1F600, 0x1F64F);
+        addRange(0x1F300, 0x1F5FF);
+        addRange(0x1F680, 0x1F6FF);
+        addRange(0x1F900, 0x1F9FF);
+        addRange(0x1FA70, 0x1FAFF);
+        addRange(0x2600, 0x26FF);
+        addRange(0x2700, 0x27BF);
+        for (let i = 0x1F1E6; i <= 0x1F1FF; i++) {
+            for (let j = 0x1F1E6; j <= 0x1F1FF; j++) {
+                const flag = String.fromCodePoint(i) + String.fromCodePoint(j);
+                if (!seen.has(flag)) {
+                    seen.add(flag);
+                    list.push(flag);
+                }
+            }
+        }
+        return list;
+    }
 
     function playSound(type) {}
 
@@ -1380,11 +1500,180 @@
     }
 
     // ==========================================
-    // EMOJI QUESTION 1v1 CLIENT LOGIC (AI RIDDLES)
+    // EMOJI QUESTION 1v1 CLIENT LOGIC (4-EMOJI PICK & GUESS)
     // ==========================================
     let eqTimerInterval = null;
-    let eqTurnSecondsLeft = 10;
-    let eqMyPlayerNum = 0;
+    let eqTurnSecondsLeft = 15;
+    let eqFullEmojiPool = [];
+    let eqSelectedEmojis = [];
+    let eqSecretEmoji = null;
+
+    function showEqSubView(viewId) {
+        ['eq-setter-view', 'eq-waiting-view', 'eq-guesser-view', 'eq-result-view'].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = id === viewId ? 'block' : 'none';
+        });
+    }
+
+    function startEqTurnCountdown(seconds) {
+        clearInterval(eqTimerInterval);
+        eqTurnSecondsLeft = Math.max(0, Number(seconds) || 15);
+        const timerEl = document.getElementById('eq-timer');
+        if (timerEl) timerEl.innerText = `${eqTurnSecondsLeft}s`;
+
+        eqTimerInterval = setInterval(() => {
+            if (!gameActive) {
+                clearInterval(eqTimerInterval);
+                return;
+            }
+            eqTurnSecondsLeft = Math.max(0, eqTurnSecondsLeft - 1);
+            if (timerEl) timerEl.innerText = `${eqTurnSecondsLeft}s`;
+            if (eqTurnSecondsLeft <= 0) {
+                clearInterval(eqTimerInterval);
+            }
+        }, 1000);
+    }
+
+    function getEqEmojiCategory(emoji) {
+        const cp = emoji.codePointAt(0) || 0;
+        if (cp >= 0x1F1E6 && cp <= 0x1F1FF) return 'flags';
+        if (cp >= 0x1F600 && cp <= 0x1F64F) return 'faces';
+        if (cp >= 0x1F680 && cp <= 0x1F6FF) return 'travel';
+        if (cp >= 0x1F354 && cp <= 0x1F37F) return 'food';
+        if (cp >= 0x1F950 && cp <= 0x1F9FF) return 'food';
+        if (cp >= 0x1F400 && cp <= 0x1F43F) return 'animals';
+        if (cp >= 0x1F300 && cp <= 0x1F32F) return 'travel';
+        if (cp >= 0x2600 && cp <= 0x26FF) return 'objects';
+        if (cp >= 0x2700 && cp <= 0x27BF) return 'objects';
+        return 'objects';
+    }
+
+    function renderEqSelectedSlots() {
+        const slotsEl = document.getElementById('eq-selected-slots');
+        if (!slotsEl) return;
+        slotsEl.innerHTML = '';
+
+        for (let i = 0; i < 4; i++) {
+            const emoji = eqSelectedEmojis[i] || '';
+            const isSecret = emoji && emoji === eqSecretEmoji;
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.innerText = emoji || '?';
+            btn.title = emoji ? (isSecret ? 'Secret Right Emoji' : 'Tap to mark as Secret Right Emoji') : 'Empty Slot';
+            btn.style.cssText = `
+                height: 52px; font-size: 1.65rem; border-radius: 8px; cursor: pointer; color: #fff;
+                background: ${isSecret ? 'rgba(250, 204, 21, 0.25)' : 'rgba(0, 0, 0, 0.6)'};
+                border: 2px solid ${isSecret ? '#facc15' : 'rgba(255,255,255,0.18)'};
+                box-shadow: ${isSecret ? '0 0 12px rgba(250, 204, 21, 0.5)' : 'none'};
+            `;
+            if (emoji) {
+                btn.onclick = () => {
+                    eqSecretEmoji = emoji;
+                    renderEqSelectedSlots();
+                    renderFilteredEqPool();
+                };
+            }
+            slotsEl.appendChild(btn);
+        }
+
+        const lockBtn = document.getElementById('eq-lock-set-btn');
+        const ready = eqSelectedEmojis.length === 4 && Boolean(eqSecretEmoji);
+        if (lockBtn) {
+            lockBtn.disabled = !ready;
+            lockBtn.style.opacity = ready ? '1' : '0.5';
+        }
+    }
+
+    function toggleEqPoolEmoji(emoji) {
+        const idx = eqSelectedEmojis.indexOf(emoji);
+        if (idx !== -1) {
+            if (eqSecretEmoji !== emoji) {
+                eqSecretEmoji = emoji;
+            } else {
+                eqSelectedEmojis.splice(idx, 1);
+                eqSecretEmoji = eqSelectedEmojis[0] || null;
+            }
+        } else if (eqSelectedEmojis.length < 4) {
+            eqSelectedEmojis.push(emoji);
+            if (!eqSecretEmoji) eqSecretEmoji = emoji;
+        }
+        renderEqSelectedSlots();
+    }
+
+    function renderFilteredEqPool() {
+        const grid = document.getElementById('eq-emoji-grid');
+        if (!grid) return;
+
+        const query = (document.getElementById('eq-emoji-search')?.value || '').trim();
+        const category = document.getElementById('eq-emoji-category')?.value || 'all';
+
+        const filtered = eqFullEmojiPool.filter((emoji) => {
+            const matchesCat = category === 'all' || getEqEmojiCategory(emoji) === category;
+            const matchesQuery = !query || emoji.includes(query);
+            return matchesCat && matchesQuery;
+        });
+
+        grid.innerHTML = '';
+
+        if (filtered.length === 0) {
+            grid.style.display = 'block';
+            grid.innerHTML = '<div style="text-align:center; color:#94a3b8; padding:14px; font-size:0.85rem;">No emojis match that filter.</div>';
+            return;
+        }
+
+        grid.style.display = 'grid';
+        filtered.forEach((emoji) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'eq-pool-btn';
+            if (eqSelectedEmojis.includes(emoji)) btn.classList.add('picked');
+            if (eqSecretEmoji === emoji) btn.classList.add('secret');
+            btn.innerText = emoji;
+            btn.onclick = () => {
+                toggleEqPoolEmoji(emoji);
+                renderFilteredEqPool();
+            };
+            grid.appendChild(btn);
+        });
+    }
+
+    function clearEqEmojiFilter() {
+        const searchEl = document.getElementById('eq-emoji-search');
+        const catEl = document.getElementById('eq-emoji-category');
+        if (searchEl) searchEl.value = '';
+        if (catEl) catEl.value = 'all';
+        renderFilteredEqPool();
+    }
+
+    function submitEqSet() {
+        if (eqSelectedEmojis.length !== 4 || !eqSecretEmoji || !currentRoomId) return;
+        const lockBtn = document.getElementById('eq-lock-set-btn');
+        if (lockBtn) {
+            lockBtn.disabled = true;
+            lockBtn.style.opacity = '0.5';
+        }
+        socket.emit('eq:submit_set', {
+            roomId: currentRoomId,
+            username: currentUser,
+            emojis: [...eqSelectedEmojis],
+            secretEmoji: eqSecretEmoji
+        });
+        document.getElementById('eq-waiting-text').innerText = '4 emojis locked in! Shuffling for your opponent...';
+        showEqSubView('eq-waiting-view');
+    }
+
+    function updateEqScoreboardFromArrayOrMap(scores) {
+        if (!scores) return;
+        if (Array.isArray(scores) && scores.length >= 2) {
+            document.getElementById('eq-p1-label').innerText = scores[0].username || 'P1';
+            document.getElementById('eq-score-1').innerText = scores[0].score ?? 0;
+            document.getElementById('eq-p2-label').innerText = scores[1].username || 'P2';
+            document.getElementById('eq-score-2').innerText = scores[1].score ?? 0;
+        } else if (typeof scores === 'object') {
+            document.getElementById('eq-score-1').innerText = scores[1] ?? 0;
+            document.getElementById('eq-score-2').innerText = scores[2] ?? 0;
+        }
+    }
 
     function joinEqQueue(stakeAmount, roomTitle) {
         const username = localStorage.getItem('emoji_current_user_secure');
@@ -1401,22 +1690,23 @@
         selectedGroupName = roomTitle;
         activeGameMode = 'emoji-question';
         gameActive = false;
-        eqMyPlayerNum = 0;
+        eqSelectedEmojis = [];
+        eqSecretEmoji = null;
 
         switchScreen('eq-game-screen');
         document.getElementById('eq-active-title').innerText = roomTitle;
         document.getElementById('eq-opponent-name').innerText = 'Searching...';
         document.getElementById('eq-current-stake').innerText = stakeAmount.toLocaleString();
         document.getElementById('eq-game-wallet').innerText = `₦${userObj.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
-        document.getElementById('eq-q-counter').innerText = '0/12';
-        document.getElementById('eq-timer').innerText = '10s';
+        document.getElementById('eq-round-badge').innerText = 'Round 1/3';
+        document.getElementById('eq-timer').innerText = '15s';
         document.getElementById('eq-score-1').innerText = '0';
         document.getElementById('eq-score-2').innerText = '0';
-        document.getElementById('eq-riddle-prompt').innerText = '';
-        document.getElementById('eq-emoji-grid').innerHTML = '';
         document.getElementById('eq-message').innerText = '';
         document.getElementById('eq-turn-banner').innerText = '⏳ Waiting for an opponent...';
         document.getElementById('eq-whatsapp-invite-box').style.display = 'block';
+        showEqSubView('eq-waiting-view');
+        document.getElementById('eq-waiting-text').innerText = 'Finding a 1v1 rival...';
 
         socket.emit('join_queue', {
             username,
@@ -1441,114 +1731,144 @@
         window.open(`https://wa.me/?text=${text}`, '_blank');
     }
 
-    socket.on('eq_generating', (data) => {
+    socket.on('eq:turn_start', (data) => {
         currentRoomId = data.roomId || currentRoomId;
-        document.getElementById('eq-whatsapp-invite-box').style.display = 'none';
-        if (Array.isArray(data.players)) {
-            const opp = data.players.find(p => p !== currentUser);
-            if (opp) document.getElementById('eq-opponent-name').innerText = opp;
-        }
-        document.getElementById('eq-turn-banner').innerHTML = `🤖 <strong style="color: var(--neon-blue);">AI GENERATING 12 RIDDLES...</strong>`;
-        document.getElementById('eq-riddle-prompt').innerText = 'Crafting unique 1v1 emoji riddles—please wait a moment...';
-        document.getElementById('eq-emoji-grid').innerHTML = '';
-    });
-
-    socket.on('eq_generation_error', (data) => {
-        clearInterval(eqTimerInterval);
-        gameActive = false;
-        document.getElementById('eq-turn-banner').innerHTML = `<strong style="color: var(--neon-red);">⚠️ AI GENERATION ERROR</strong>`;
-        document.getElementById('eq-message').innerText = data.message || 'Unable to generate AI riddles right now.';
-        updateLobbyWallet();
-    });
-
-    socket.on('eq_new_turn', (data) => {
-        currentRoomId = data.roomId;
         gameActive = true;
-        eqMyPlayerNum = data.playerNum || eqMyPlayerNum;
-        roomPlayers = data.players || roomPlayers;
-
-        const opp = roomPlayers.find(p => p !== currentUser) || data.opponentName || 'Opponent';
-        document.getElementById('eq-opponent-name').innerText = opp;
+        eqSelectedEmojis = [];
+        eqSecretEmoji = null;
         document.getElementById('eq-whatsapp-invite-box').style.display = 'none';
-        document.getElementById('eq-q-counter').innerText = `${data.questionNumber}/${data.totalQuestions}`;
-        document.getElementById('eq-score-1').innerText = data.scores?.[1] ?? 0;
-        document.getElementById('eq-score-2').innerText = data.scores?.[2] ?? 0;
-        document.getElementById('eq-riddle-prompt').innerText = data.prompt;
 
-        isMyTurn = (data.turnUsername === currentUser) || (eqMyPlayerNum && data.turnPlayer === eqMyPlayerNum);
-        eqTurnSecondsLeft = data.timeLeft || 10;
-        document.getElementById('eq-timer').innerText = `${eqTurnSecondsLeft}s`;
-
-        const banner = document.getElementById('eq-turn-banner');
-        if (isMyTurn) {
-            banner.innerHTML = `👉 <strong style="color: #00ff66;">YOUR TURN!</strong> (${eqTurnSecondsLeft}s left)`;
-            banner.style.borderColor = '#00ff66';
-        } else {
-            banner.innerHTML = `⏳ <strong style="color: #ff003c;">${opp}'S TURN</strong> (${eqTurnSecondsLeft}s left)`;
-            banner.style.borderColor = '#ff003c';
+        if (Array.isArray(data.scores)) {
+            const oppObj = data.scores.find(p => p.username !== currentUser);
+            if (oppObj) document.getElementById('eq-opponent-name').innerText = oppObj.username;
+            updateEqScoreboardFromArrayOrMap(data.scores);
         }
 
-        const grid = document.getElementById('eq-emoji-grid');
-        grid.innerHTML = '';
-        (data.options || []).forEach(emoji => {
-            const btn = document.createElement('button');
-            btn.classList.add('box');
-            btn.innerText = emoji;
-            btn.disabled = !isMyTurn;
-            btn.onclick = () => {
-                if (!gameActive || !isMyTurn) return;
-                isMyTurn = false;
-                grid.querySelectorAll('button').forEach(b => b.disabled = true);
-                socket.emit('eq_select_emoji', {
-                    roomId: currentRoomId,
-                    username: currentUser,
-                    emoji
-                });
-            };
-            grid.appendChild(btn);
-        });
+        const roundNum = data.roundNumber || Math.ceil((data.turnNumber || 1) / 2);
+        document.getElementById('eq-round-badge').innerText = data.isSuddenDeath
+            ? 'SUDDEN DEATH'
+            : `Round ${roundNum}/3`;
 
-        clearInterval(eqTimerInterval);
-        eqTimerInterval = setInterval(() => {
-            if (!gameActive) {
-                clearInterval(eqTimerInterval);
-                return;
-            }
-            eqTurnSecondsLeft = Math.max(0, eqTurnSecondsLeft - 1);
-            document.getElementById('eq-timer').innerText = `${eqTurnSecondsLeft}s`;
-            if (isMyTurn) {
-                banner.innerHTML = `👉 <strong style="color: #00ff66;">YOUR TURN!</strong> (${eqTurnSecondsLeft}s left)`;
-            } else {
-                banner.innerHTML = `⏳ <strong style="color: #ff003c;">${opp}'S TURN</strong> (${eqTurnSecondsLeft}s left)`;
-            }
-        }, 1000);
+        startEqTurnCountdown(data.seconds || 15);
+        eqFullEmojiPool = (Array.isArray(data.emojiPool) && data.emojiPool.length > 0)
+            ? data.emojiPool
+            : buildClientEmojiPool();
+
+        const isSetter = String(data.setterName || '') === String(currentUser)
+            || String(data.setterId || '') === String(currentUser);
+        const banner = document.getElementById('eq-turn-banner');
+
+        if (isSetter) {
+            banner.innerHTML = `👉 <strong style="color: #00ff66;">YOUR TURN TO SET 4 EMOJIS</strong>`;
+            banner.style.borderColor = '#00ff66';
+            clearEqEmojiFilter();
+            renderEqSelectedSlots();
+            showEqSubView('eq-setter-view');
+        } else {
+            const setterLabel = data.setterName || 'Opponent';
+            document.getElementById('eq-opponent-name').innerText = setterLabel;
+            banner.innerHTML = `⏳ <strong style="color: var(--neon-gold);">${setterLabel} IS PICKING 4 EMOJIS...</strong>`;
+            banner.style.borderColor = 'var(--neon-gold)';
+            document.getElementById('eq-waiting-text').innerText = `Get ready! ${setterLabel} is choosing 4 emojis and marking 1 secret target.`;
+            showEqSubView('eq-waiting-view');
+        }
     });
 
-    socket.on('eq_game_over', (data) => {
+    socket.on('eq:guess_phase', (data) => {
+        currentRoomId = data.roomId || currentRoomId;
+        gameActive = true;
+        document.getElementById('eq-whatsapp-invite-box').style.display = 'none';
+        startEqTurnCountdown(data.seconds || 12);
+
+        const isGuesser = String(data.guesserName || '') === String(currentUser)
+            || String(data.guesserId || '') === String(currentUser);
+        const banner = document.getElementById('eq-turn-banner');
+
+        if (isGuesser) {
+            const setterLabel = data.setterName || 'Opponent';
+            document.getElementById('eq-opponent-name').innerText = setterLabel;
+            banner.innerHTML = `🎯 <strong style="color: #00ff66;">YOUR TURN TO GUESS!</strong>`;
+            banner.style.borderColor = '#00ff66';
+            document.getElementById('eq-guess-prompt').innerText = `Which emoji did ${setterLabel} mark as RIGHT?`;
+
+            const box = document.getElementById('eq-guess-options');
+            box.innerHTML = '';
+            (data.options || []).forEach((emoji) => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'box';
+                btn.style.aspectRatio = 'auto';
+                btn.style.padding = '16px';
+                btn.style.fontSize = '2.2rem';
+                btn.innerText = emoji;
+                btn.onclick = () => {
+                    if (!gameActive) return;
+                    box.querySelectorAll('button').forEach((b) => (b.disabled = true));
+                    socket.emit('eq:submit_guess', {
+                        roomId: currentRoomId,
+                        username: currentUser,
+                        emoji
+                    });
+                };
+                box.appendChild(btn);
+            });
+            showEqSubView('eq-guesser-view');
+        } else {
+            const guesserLabel = data.guesserName || 'Opponent';
+            document.getElementById('eq-opponent-name').innerText = guesserLabel;
+            banner.innerHTML = `⏳ <strong style="color: #ff003c;">${guesserLabel} IS GUESSING...</strong>`;
+            banner.style.borderColor = '#ff003c';
+            document.getElementById('eq-waiting-text').innerText = `Shuffled set sent: ${(data.options || []).join('  ')} — Waiting for ${guesserLabel}...`;
+            showEqSubView('eq-waiting-view');
+        }
+    });
+
+    socket.on('eq:turn_result', (data) => {
+        clearInterval(eqTimerInterval);
+        updateEqScoreboardFromArrayOrMap(data.scores);
+
+        const winnerName = data.pointWinnerName || 'Player';
+        document.getElementById('eq-result-emoji').innerText = data.secretEmoji || '🎯';
+        document.getElementById('eq-result-title').innerText = data.isCorrect
+            ? `Guessed Right! +1 to ${winnerName}`
+            : data.timedOut
+            ? `Time Up! +1 to ${winnerName}`
+            : `Wrong Pick! +1 to ${winnerName}`;
+        document.getElementById('eq-result-sub').innerText = `Secret right emoji: ${data.secretEmoji || '?'}. Next turn loading...`;
+        showEqSubView('eq-result-view');
+    });
+
+    socket.on('eq:match_over', (data) => {
         clearInterval(eqTimerInterval);
         gameActive = false;
         activeChallengeCode = null;
         document.getElementById('eq-whatsapp-invite-box').style.display = 'none';
-        document.getElementById('eq-emoji-grid').querySelectorAll('button').forEach(b => b.disabled = true);
-        document.getElementById('eq-score-1').innerText = data.scores?.[1] ?? 0;
-        document.getElementById('eq-score-2').innerText = data.scores?.[2] ?? 0;
+        updateEqScoreboardFromArrayOrMap(data.scores);
 
         const banner = document.getElementById('eq-turn-banner');
         const msgEl = document.getElementById('eq-message');
+        const winnerName = data.winnerName || data.winner;
 
-        if (data.reason === 'draw' || !data.winner) {
+        if (!winnerName) {
             banner.innerHTML = `<strong style="color: var(--neon-gold);">🤝 MATCH DRAW — STAKES REFUNDED</strong>`;
-            msgEl.innerText = `Scores tied! Your ₦${selectedStake.toLocaleString()} stake has been refunded.`;
-        } else if (data.winner === currentUser) {
+            msgEl.innerText = `Match ended tied. Your ₦${selectedStake.toLocaleString()} stake has been refunded.`;
+        } else if (winnerName === currentUser) {
             let userObj = getCurrentUserObj();
             userObj.totalWins = (userObj.totalWins || 0) + 1;
             saveUserData(userObj);
             banner.innerHTML = `<strong style="color: #00ff66;">🎉 VICTORY! YOU WON!</strong>`;
-            msgEl.innerHTML = `🎉 You won <strong>₦${Number(data.netWinnings || 0).toLocaleString()}</strong> (after ${data.commissionPercent || 0}% commission).`;
+            msgEl.innerHTML = data.netWinnings
+                ? `🎉 You won <strong>₦${Number(data.netWinnings).toLocaleString()}</strong> (after ${data.commissionPercent || 0}% commission).`
+                : `🏆 You won the 1v1 match!`;
         } else {
             banner.innerHTML = `<strong style="color: #ff003c;">❌ OPPONENT WON!</strong>`;
-            msgEl.innerText = `${data.winner} took the match. ₦${selectedStake.toLocaleString()} stake deducted.`;
+            msgEl.innerText = `${winnerName} took the match. ₦${selectedStake.toLocaleString()} stake deducted.`;
         }
+
+        document.getElementById('eq-result-emoji').innerText = '🏆';
+        document.getElementById('eq-result-title').innerText = winnerName ? `${winnerName} Wins!` : 'Match Draw';
+        document.getElementById('eq-result-sub').innerText = data.forfeit ? 'Opponent disconnected.' : 'Match complete.';
+        showEqSubView('eq-result-view');
 
         updateLobbyWallet();
         selectedStake = 0;
