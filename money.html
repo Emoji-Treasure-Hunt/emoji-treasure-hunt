@@ -398,6 +398,139 @@
             background: var(--neon-blue); color: #000; border: none; padding: 0 16px; border-radius: 6px; cursor: pointer; font-family: 'Orbitron', sans-serif; font-weight: bold; text-transform: uppercase; font-size: 0.8rem; box-shadow: 0 0 10px rgba(0,243,255,0.4);
         }
         .chat-send-btn:hover { background: #fff; box-shadow: 0 0 15px rgba(255,255,255,0.8); }
+
+        /* ==========================================
+           OPTION 1: CLASSIC EMERALD FELT WHOT TABLE
+           ========================================== */
+        #whot-game-screen {
+            position: relative;
+            background-color: #065f46;
+            background-image:
+                radial-gradient(circle at 50% 42%, rgba(16, 185, 129, 0.24) 0%, rgba(6, 78, 59, 0.92) 55%, rgba(2, 44, 34, 0.98) 100%),
+                repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.025) 0px, rgba(255, 255, 255, 0.025) 2px, transparent 2px, transparent 6px),
+                repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.06) 0px, rgba(0, 0, 0, 0.06) 2px, transparent 2px, transparent 6px);
+            border: 2px solid rgba(250, 204, 21, 0.55);
+            border-radius: 14px;
+            padding: 16px 14px;
+            box-shadow: inset 0 0 0 3px rgba(250, 204, 21, 0.16), inset 0 0 32px rgba(0, 0, 0, 0.65);
+        }
+
+        .whot-felt-center {
+            position: relative;
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+            align-items: center;
+            margin: 14px 0;
+            padding: 18px 14px;
+            background: radial-gradient(circle, rgba(6, 95, 70, 0.65) 0%, rgba(2, 44, 34, 0.72) 100%);
+            border-radius: 16px;
+            border: 2px dashed rgba(250, 204, 21, 0.42);
+            box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.45);
+            overflow: hidden;
+        }
+
+        .whot-felt-watermark {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            font-size: 2rem;
+            color: rgba(250, 204, 21, 0.09);
+            pointer-events: none;
+            user-select: none;
+            letter-spacing: 4px;
+        }
+
+        /* ==========================================
+           WHOT SPECIAL ACTION LAUGHING EMOJI POPUP
+           ========================================== */
+        #whot-action-popup {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 120;
+        }
+
+        .laughing-emoji-animate {
+            font-size: 5.5rem;
+            line-height: 1;
+            animation: whotLaughPop 2.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+            filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.65));
+        }
+
+        .laughing-caption-animate {
+            margin-top: 6px;
+            padding: 4px 12px;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid var(--neon-gold);
+            color: var(--neon-gold);
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.75rem;
+            letter-spacing: 1px;
+            animation: whotLaughPop 2.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+
+        @keyframes whotLaughPop {
+            0% { transform: scale(0.15) rotate(-22deg); opacity: 0; }
+            16% { transform: scale(1.22) rotate(10deg); opacity: 1; }
+            30% { transform: scale(1) rotate(-4deg); opacity: 1; }
+            78% { transform: scale(1.04) rotate(2deg); opacity: 1; }
+            100% { transform: scale(0.75) rotate(0deg); opacity: 0; }
+        }
+
+        /* ==========================================
+           SHARED VICTORY POPUP OVERLAY (ALL GAMES)
+           ========================================== */
+        #global-win-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(2, 6, 23, 0.84);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            z-index: 999;
+        }
+
+        #global-win-overlay.active {
+            display: flex;
+            animation: fadeIn 0.25s ease;
+        }
+
+        .win-modal-card {
+            max-width: 360px;
+            width: 100%;
+            background: radial-gradient(circle at 50% 0%, rgba(250, 204, 21, 0.22), rgba(15, 23, 42, 0.97) 65%);
+            border: 2px solid var(--neon-gold);
+            border-radius: 18px;
+            padding: 26px 20px;
+            text-align: center;
+            box-shadow: 0 0 35px rgba(250, 204, 21, 0.35), 0 0 60px rgba(0, 255, 102, 0.18);
+            animation: popIn 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .win-trophy-bounce {
+            font-size: 4.2rem;
+            line-height: 1.1;
+            margin-bottom: 8px;
+            animation: trophyBounce 1.1s ease infinite alternate;
+            filter: drop-shadow(0 0 14px rgba(250, 204, 21, 0.65));
+        }
+
+        @keyframes trophyBounce {
+            from { transform: translateY(0) scale(1); }
+            to { transform: translateY(-7px) scale(1.08); }
+        }
     </style>
 </head>
 <body>
@@ -477,7 +610,7 @@
                 <label>Enter 6-Digit OTP Code</label>
                 <input type="text" id="otp-input" placeholder="Enter code" maxlength="6">
             </div>
-            <button class="btn" onclick="verifyOTP()">Verify & Complete Registration</button>
+            <button class="btn" onclick="verifyOTP()">Verify &amp; Complete Registration</button>
             <button class="btn btn-secondary" onclick="cancelOTP()">Back</button>
         </div>
 
@@ -537,7 +670,7 @@
             </div>
             
             <div id="hamburger-dropdown" class="dropdown-menu">
-                <button class="dropdown-item" onclick="closeMenu(); showReferralModal()" style="color: var(--neon-gold);">🎁 Refer & Earn (1%)</button>
+                <button class="dropdown-item" onclick="closeMenu(); showReferralModal()" style="color: var(--neon-gold);">🎁 Refer &amp; Earn (1%)</button>
                 <button class="dropdown-item" onclick="closeMenu(); showLeaderboard()">🏆 Top Players</button>
                 <button class="dropdown-item" onclick="closeMenu(); showTransactionHistory()">📜 History</button>
                 <button class="dropdown-item" onclick="closeMenu(); showChangePasswordScreen()">🔐 Password</button>
@@ -583,7 +716,7 @@
         <div class="group-card" onclick="selectGame('whot')" style="cursor: pointer;">
             <div class="group-info">
                 <h3>🃏 Naija Whot 1v1</h3>
-                <p>Fast-paced card duel with Pick Two &amp; General Market.</p>
+                <p>Emerald felt table duel with Pick Two &amp; General Market.</p>
             </div>
             <button class="group-btn">Play</button>
         </div>
@@ -782,7 +915,7 @@
             <div class="target-display">
                 <span id="eq-round-badge">Round 1/3</span>
             </div>
-            <div>Turn Time: <span class="timer" id="eq-timer">15s</span></div>
+            <div>Turn Time: <span class="timer" id="eq-timer">20s</span></div>
         </div>
 
         <div style="display: flex; justify-content: space-around; background: rgba(0,0,0,0.35); padding: 8px 12px; border-radius: 8px; margin-bottom: 12px; font-family:'Orbitron',sans-serif; font-size: 0.85rem;">
@@ -971,8 +1104,11 @@
         <button class="btn btn-secondary" onclick="switchScreen('game-hub-screen')">Back to Arcade Hub</button>
     </div>
 
-    <!-- NAIJA WHOT ACTIVE GAME SCREEN -->
+    <!-- NAIJA WHOT ACTIVE GAME SCREEN (EMERALD FELT + LAUGHING EMOJI POPUP + FACE BADGED CARDS) -->
     <div id="whot-game-screen" class="screen-section">
+        <!-- SPECIAL ACTION LAUGHING EMOJI OVERLAY -->
+        <div id="whot-action-popup"></div>
+
         <h1><span class="app-logo">🃏</span> Naija Whot 1v1</h1>
         <div class="user-panel">
             <span>⚔️ Rival: <strong id="whot-opponent-name">Searching...</strong> (<span id="whot-opponent-cards">0</span> 🃏)</span>
@@ -980,45 +1116,47 @@
         </div>
 
         <div class="turn-indicator-box" id="whot-turn-banner">⏳ Searching for Whot opponent...</div>
-        <div id="whot-action-log" style="font-size: 0.85rem; color: var(--neon-gold); margin-bottom: 12px; min-height: 20px;"></div>
+        <div id="whot-action-log" style="font-size: 0.85rem; color: var(--neon-gold); margin-bottom: 10px; min-height: 20px;"></div>
 
         <!-- WHATSAPP WHOT INVITE CONTAINER -->
-        <div id="whot-whatsapp-invite-box" style="display: none; margin-bottom: 15px; padding: 12px; background: rgba(37, 211, 102, 0.1); border: 1px solid #25D366; border-radius: 8px;">
+        <div id="whot-whatsapp-invite-box" style="display: none; margin-bottom: 15px; padding: 12px; background: rgba(15, 23, 42, 0.75); border: 1px solid #25D366; border-radius: 8px;">
             <p style="margin: 0 0 8px 0; font-size: 0.85rem; color: #25D366; font-family:'Orbitron',sans-serif;">📱 Want to challenge a friend?</p>
             <button class="btn" style="background: linear-gradient(45deg, #128C7E, #25D366); color: #fff; margin-top: 0; padding: 10px; font-size: 0.85rem;" onclick="shareWhotWhatsAppInvite()">
                 📲 Send Whot WhatsApp Challenge
             </button>
         </div>
 
-        <!-- TABLE CENTER: MARKET & TOP CARD -->
-        <div style="display: flex; justify-content: center; gap: 25px; align-items: center; margin: 15px 0; padding: 15px; background: rgba(0,0,0,0.35); border-radius: 12px; border: 1px solid rgba(255,255,255,0.08);">
-            <div onclick="drawWhotCard()" style="cursor: pointer; width: 85px; height: 120px; background: linear-gradient(135deg, #1e293b, #0f172a); border: 2px solid var(--neon-blue); border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; box-shadow: 0 0 15px rgba(0,243,255,0.2);">
-                <span style="font-size: 1.6rem;">🎴</span>
-                <span style="font-family: 'Orbitron', sans-serif; font-size: 0.7rem; color: var(--neon-blue); margin-top: 4px;">MARKET</span>
-                <span id="whot-market-count" style="font-size: 0.8rem; color: #94a3b8;">(0)</span>
+        <!-- TABLE CENTER: MARKET & TOP CARD ON EMERALD FELT -->
+        <div class="whot-felt-center">
+            <div class="whot-felt-watermark">● ▲ ✚ ■ ★</div>
+
+            <div onclick="drawWhotCard()" style="position: relative; z-index: 2; cursor: pointer; width: 86px; height: 122px; background: linear-gradient(135deg, #1e293b, #0f172a); border: 2px solid var(--neon-gold); border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; box-shadow: 0 6px 16px rgba(0,0,0,0.55);">
+                <span style="font-size: 1.65rem;">🎴</span>
+                <span style="font-family: 'Orbitron', sans-serif; font-size: 0.68rem; color: var(--neon-gold); margin-top: 4px;">MARKET</span>
+                <span id="whot-market-count" style="font-size: 0.8rem; color: #e2e8f0;">(0)</span>
             </div>
 
-            <div id="whot-top-card" style="width: 85px; height: 120px; background: #fff; color: #7f1d1d; border: 3px solid var(--neon-gold); border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: 'Orbitron', sans-serif; font-weight: 900; box-shadow: 0 0 20px rgba(250,204,21,0.3);">
+            <div id="whot-top-card" style="position: relative; z-index: 2; width: 86px; height: 122px; background: #fff; color: #7f1d1d; border: 3px solid var(--neon-gold); border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: 'Orbitron', sans-serif; font-weight: 900; box-shadow: 0 6px 20px rgba(0,0,0,0.6);">
                 <span style="font-size: 1.1rem;">?</span>
             </div>
         </div>
 
-        <div id="whot-called-shape-badge" style="display: none; background: rgba(250,204,21,0.15); border: 1px solid var(--neon-gold); color: var(--neon-gold); padding: 6px; border-radius: 6px; margin-bottom: 10px; font-family: 'Orbitron', sans-serif; font-size: 0.85rem;"></div>
+        <div id="whot-called-shape-badge" style="display: none; background: rgba(15, 23, 42, 0.85); border: 1px solid var(--neon-gold); color: var(--neon-gold); padding: 6px; border-radius: 6px; margin-bottom: 10px; font-family: 'Orbitron', sans-serif; font-size: 0.85rem;"></div>
 
         <!-- SHAPE PICKER MODAL FOR WHOT 20 -->
         <div id="whot-shape-picker" style="display: none; background: rgba(15,23,42,0.95); border: 1px solid var(--neon-blue); padding: 12px; border-radius: 10px; margin-bottom: 12px;">
             <div style="font-size: 0.8rem; color: var(--neon-blue); margin-bottom: 8px; font-family: 'Orbitron', sans-serif;">CALL A SHAPE FOR WHOT 20:</div>
             <div style="display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;">
-                <button class="group-btn" style="padding: 6px 10px; font-size: 0.8rem;" onclick="confirmWhot20Shape('circle')">● Circle</button>
-                <button class="group-btn" style="padding: 6px 10px; font-size: 0.8rem;" onclick="confirmWhot20Shape('triangle')">▲ Triangle</button>
-                <button class="group-btn" style="padding: 6px 10px; font-size: 0.8rem;" onclick="confirmWhot20Shape('cross')">✚ Cross</button>
-                <button class="group-btn" style="padding: 6px 10px; font-size: 0.8rem;" onclick="confirmWhot20Shape('square')">■ Square</button>
-                <button class="group-btn" style="padding: 6px 10px; font-size: 0.8rem;" onclick="confirmWhot20Shape('star')">★ Star</button>
+                <button class="group-btn" style="padding: 6px 10px; font-size: 0.8rem;" onclick="confirmWhot20Shape('circle')">😎 ● Circle</button>
+                <button class="group-btn" style="padding: 6px 10px; font-size: 0.8rem;" onclick="confirmWhot20Shape('triangle')">🤩 ▲ Triangle</button>
+                <button class="group-btn" style="padding: 6px 10px; font-size: 0.8rem;" onclick="confirmWhot20Shape('cross')">🤯 ✚ Cross</button>
+                <button class="group-btn" style="padding: 6px 10px; font-size: 0.8rem;" onclick="confirmWhot20Shape('square')">😤 ■ Square</button>
+                <button class="group-btn" style="padding: 6px 10px; font-size: 0.8rem;" onclick="confirmWhot20Shape('star')">🥳 ★ Star</button>
             </div>
         </div>
 
-        <div style="text-align: left; font-size: 0.8rem; color: #94a3b8; margin-bottom: 6px; font-family: 'Orbitron', sans-serif;">YOUR HAND (TAP TO PLAY):</div>
-        <div id="whot-my-hand" style="display: flex; gap: 8px; overflow-x: auto; padding: 10px 4px; min-height: 115px;"></div>
+        <div style="text-align: left; font-size: 0.8rem; color: #fef08a; margin-bottom: 6px; font-family: 'Orbitron', sans-serif; text-shadow: 0 1px 3px rgba(0,0,0,0.8);">YOUR HAND (TAP TO PLAY):</div>
+        <div id="whot-my-hand" style="display: flex; gap: 8px; overflow-x: auto; padding: 10px 4px; min-height: 118px;"></div>
     </div>
 
     <!-- REFERRAL & AFFILIATE MODAL SCREEN -->
@@ -1278,6 +1416,18 @@
     </div>
 </div>
 
+<!-- UNIVERSAL VICTORY POPUP MODAL (ALL GAMES) -->
+<div id="global-win-overlay" onclick="if (event.target === this) closeWinModal()">
+    <div class="win-modal-card">
+        <div class="win-trophy-bounce" id="win-modal-emoji">🏆</div>
+        <div id="win-modal-game-badge" style="font-family: 'Orbitron', sans-serif; font-size: 0.72rem; color: var(--neon-blue); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 6px;">MATCH VICTORY</div>
+        <h2 id="win-modal-title" style="font-family: 'Orbitron', sans-serif; font-size: 1.45rem; color: var(--neon-green); margin: 0 0 8px 0; text-shadow: 0 0 12px rgba(0, 255, 102, 0.45);">YOU WON!</h2>
+        <div id="win-modal-amount" style="font-family: 'Orbitron', sans-serif; font-size: 1.65rem; font-weight: 900; color: var(--neon-gold); margin-bottom: 8px; text-shadow: 0 0 12px rgba(250, 204, 21, 0.5);">+₦0</div>
+        <p id="win-modal-sub" style="font-size: 0.92rem; color: #cbd5e1; margin: 0 0 18px 0; line-height: 1.4;">Credited directly to your arcade wallet.</p>
+        <button type="button" class="btn btn-success" onclick="closeWinModal()" style="margin-top: 0;">Awesome! Continue</button>
+    </div>
+</div>
+
 <script>
     const socket = io(window.location.origin);
     const ADMIN_USERNAME = "onyejeAdmin";
@@ -1305,6 +1455,31 @@
         '😂', '😭', '🤯', '😡', '😱', '🤡', '🤠', '🥳', '😎', '🥶', '🥴', '🥺',
         '💣', '🍌', '👻', '💀', '🐸', '💩', '🧊', '🌵', '🍅', '🧩', '🪵', '🌀'
     ];
+
+    // ==========================================
+    // SHARED WINNING POPUP HELPER (ALL GAMES)
+    // ==========================================
+    function showWinModal({ gameLabel, title, amountText, subtitle, emoji = '🏆' }) {
+        const overlay = document.getElementById('global-win-overlay');
+        if (!overlay) return;
+        document.getElementById('win-modal-emoji').innerText = emoji;
+        document.getElementById('win-modal-game-badge').innerText = gameLabel || 'SKILL ARCADE VICTORY';
+        document.getElementById('win-modal-title').innerText = title || 'YOU WON!';
+        const amountEl = document.getElementById('win-modal-amount');
+        if (amountText) {
+            amountEl.style.display = 'block';
+            amountEl.innerText = amountText;
+        } else {
+            amountEl.style.display = 'none';
+        }
+        document.getElementById('win-modal-sub').innerText = subtitle || 'Winnings added to your wallet.';
+        overlay.classList.add('active');
+    }
+
+    function closeWinModal() {
+        const overlay = document.getElementById('global-win-overlay');
+        if (overlay) overlay.classList.remove('active');
+    }
 
     function buildClientEmojiPool() {
         const list = [];
@@ -1451,6 +1626,7 @@
             if (res && res.success) {
                 if (res.gameType === 'whot') {
                     activeGameMode = 'whot';
+                    lastWhotAction = '';
                     switchScreen('whot-game-screen');
                     document.getElementById('whot-turn-banner').innerText = "⏳ Joining private challenge match...";
                 } else if (res.gameType === 'emoji-question') {
@@ -1503,7 +1679,7 @@
     // EMOJI QUESTION 1v1 CLIENT LOGIC (4-EMOJI PICK & GUESS)
     // ==========================================
     let eqTimerInterval = null;
-    let eqTurnSecondsLeft = 15;
+    let eqTurnSecondsLeft = 20;
     let eqFullEmojiPool = [];
     let eqSelectedEmojis = [];
     let eqSecretEmoji = null;
@@ -1517,7 +1693,7 @@
 
     function startEqTurnCountdown(seconds) {
         clearInterval(eqTimerInterval);
-        eqTurnSecondsLeft = Math.max(0, Number(seconds) || 15);
+        eqTurnSecondsLeft = Math.max(0, Number(seconds) || 20);
         const timerEl = document.getElementById('eq-timer');
         if (timerEl) timerEl.innerText = `${eqTurnSecondsLeft}s`;
 
@@ -1699,7 +1875,7 @@
         document.getElementById('eq-current-stake').innerText = stakeAmount.toLocaleString();
         document.getElementById('eq-game-wallet').innerText = `₦${userObj.balance.toLocaleString('en-NG', {minimumFractionDigits: 2})}`;
         document.getElementById('eq-round-badge').innerText = 'Round 1/3';
-        document.getElementById('eq-timer').innerText = '15s';
+        document.getElementById('eq-timer').innerText = '20s';
         document.getElementById('eq-score-1').innerText = '0';
         document.getElementById('eq-score-2').innerText = '0';
         document.getElementById('eq-message').innerText = '';
@@ -1749,7 +1925,7 @@
             ? 'SUDDEN DEATH'
             : `Round ${roundNum}/3`;
 
-        startEqTurnCountdown(data.seconds || 15);
+        startEqTurnCountdown(data.seconds || 20);
         eqFullEmojiPool = (Array.isArray(data.emojiPool) && data.emojiPool.length > 0)
             ? data.emojiPool
             : buildClientEmojiPool();
@@ -1778,7 +1954,7 @@
         currentRoomId = data.roomId || currentRoomId;
         gameActive = true;
         document.getElementById('eq-whatsapp-invite-box').style.display = 'none';
-        startEqTurnCountdown(data.seconds || 12);
+        startEqTurnCountdown(data.seconds || 8);
 
         const isGuesser = String(data.guesserName || '') === String(currentUser)
             || String(data.guesserId || '') === String(currentUser);
@@ -1834,7 +2010,7 @@
             : data.timedOut
             ? `Time Up! +1 to ${winnerName}`
             : `Wrong Pick! +1 to ${winnerName}`;
-        document.getElementById('eq-result-sub').innerText = `Secret right emoji: ${data.secretEmoji || '?'}. Next turn loading...`;
+        document.getElementById('eq-result-sub').innerText = `Secret right emoji: ${data.secretEmoji || '?'}. Next turn starting shortly...`;
         showEqSubView('eq-result-view');
     });
 
@@ -1860,6 +2036,16 @@
             msgEl.innerHTML = data.netWinnings
                 ? `🎉 You won <strong>₦${Number(data.netWinnings).toLocaleString()}</strong> (after ${data.commissionPercent || 0}% commission).`
                 : `🏆 You won the 1v1 match!`;
+
+            showWinModal({
+                gameLabel: 'EMOJI QUESTION 1v1 VICTORY',
+                title: 'YOU WON THE DUEL!',
+                amountText: data.netWinnings ? `+₦${Number(data.netWinnings).toLocaleString()}` : '🏆 WINNER',
+                subtitle: data.forfeit
+                    ? 'Opponent disconnected—full match payout credited!'
+                    : `Final Score: ${data.scores?.[0]?.score ?? 0} - ${data.scores?.[1]?.score ?? 0}`,
+                emoji: '🧠🏆'
+            });
         } else {
             banner.innerHTML = `<strong style="color: #ff003c;">❌ OPPONENT WON!</strong>`;
             msgEl.innerText = `${winnerName} took the match. ₦${selectedStake.toLocaleString()} stake deducted.`;
@@ -2123,6 +2309,14 @@
             const feeText = data.feeCharged ? `₦${data.feeCharged.toLocaleString()} (${data.commissionPercent}% commission)` : `commission`;
             document.getElementById('message').innerHTML = `🎉 Congratulations! You won ₦${data.netWinnings.toLocaleString()} after ${feeText} was deducted.`;
             document.getElementById('turn-indicator').innerHTML = `<strong style="color: #00ff66;">🎉 Victory! You Won!</strong>`;
+
+            showWinModal({
+                gameLabel: 'EMOJI TREASURE HUNT VICTORY',
+                title: 'TREASURE FOUND!',
+                amountText: `+₦${Number(data.netWinnings || 0).toLocaleString()}`,
+                subtitle: `You found ${currentTreasureEmoji} first! Credited after ${feeText}.`,
+                emoji: `${currentTreasureEmoji}🏆`
+            });
         } else {
             document.getElementById('message').innerHTML = `❌ Game Over! ${data.winner} found the treasure first. ₦${selectedStake.toLocaleString()} stake deducted.`;
             document.getElementById('turn-indicator').innerHTML = `<strong style="color: #ff003c;">❌ Opponent Won!</strong>`;
@@ -3203,11 +3397,12 @@
     }
 
     // ==========================================
-    // NAIJA WHOT CLIENT LOGIC (WITH 15s TIMER)
+    // NAIJA WHOT CLIENT LOGIC (EMERALD FELT, LAUGH POPUP & FACE CARDS)
     // ==========================================
     let pendingWhot20CardIndex = null;
     let whotTurnInterval = null;
     let whotSecondsLeft = 15;
+    let lastWhotAction = '';
 
     const shapeSymbols = {
         circle: '●',
@@ -3217,6 +3412,47 @@
         star: '★',
         whot: '👑 WHOT'
     };
+
+    const shapeFaceEmojis = {
+        circle: '😎',
+        triangle: '🤩',
+        cross: '🤯',
+        square: '😤',
+        star: '🥳',
+        whot: '😈'
+    };
+
+    function getWhotCardFace(card) {
+        if (!card) return '😎';
+        if (card.shape === 'whot') return '😈';
+        if (card.number === 1) return '🛑';
+        if (card.number === 2) return '😂';
+        if (card.number === 8) return '😜';
+        if (card.number === 14) return '🤣';
+        return shapeFaceEmojis[card.shape] || '😎';
+    }
+
+    function triggerWhotLaughPopup(captionText) {
+        const popupContainer = document.getElementById('whot-action-popup');
+        if (!popupContainer) return;
+
+        popupContainer.innerHTML = '';
+        const emojiSpan = document.createElement('span');
+        emojiSpan.innerText = '😂';
+        emojiSpan.className = 'laughing-emoji-animate';
+        popupContainer.appendChild(emojiSpan);
+
+        if (captionText) {
+            const cap = document.createElement('div');
+            cap.innerText = captionText;
+            cap.className = 'laughing-caption-animate';
+            popupContainer.appendChild(cap);
+        }
+
+        setTimeout(() => {
+            if (popupContainer) popupContainer.innerHTML = '';
+        }, 2500);
+    }
 
     function joinWhotQueue(stakeAmount, roomTitle) {
         const username = localStorage.getItem('emoji_current_user_secure');
@@ -3232,6 +3468,7 @@
         selectedStake = stakeAmount;
         activeGameMode = 'whot';
         gameActive = false;
+        lastWhotAction = '';
         switchScreen('whot-game-screen');
         document.getElementById('whot-opponent-name').innerText = 'Searching...';
         document.getElementById('whot-opponent-cards').innerText = '0';
@@ -3263,6 +3500,21 @@
         document.getElementById('whot-action-log').innerText = state.lastAction || '';
         document.getElementById('whot-whatsapp-invite-box').style.display = 'none';
 
+        // Trigger laughing emoji popup when any player serves (Whot 20), Hold On (1), Pick Two (2), or General Market (14)
+        if (state.lastAction && state.lastAction !== lastWhotAction) {
+            lastWhotAction = state.lastAction;
+            const la = state.lastAction.toLowerCase();
+            if (la.includes('played hold on (1)')) {
+                triggerWhotLaughPopup('HOLD ON! 😂');
+            } else if (la.includes('played pick two (2)')) {
+                triggerWhotLaughPopup('PICK TWO! 😂');
+            } else if (la.includes('played general market (14)')) {
+                triggerWhotLaughPopup('GENERAL MARKET! 😂');
+            } else if (la.includes('played whot 20 and called')) {
+                triggerWhotLaughPopup('WHOT SERVE! 😂');
+            }
+        }
+
         const turnBanner = document.getElementById('whot-turn-banner');
         if (isMyTurn) {
             startWhotTimer();
@@ -3277,16 +3529,20 @@
         }
 
         const topEl = document.getElementById('whot-top-card');
+        const topFace = getWhotCardFace(state.topCard);
         topEl.innerHTML = `
-            <div style="font-size: 0.9rem;">${state.topCard.number}</div>
-            <div style="font-size: 1.8rem; margin: 4px 0;">${shapeSymbols[state.topCard.shape] || state.topCard.shape}</div>
-            <div style="font-size: 0.65rem; text-transform: uppercase;">${state.topCard.shape}</div>
+            <div style="width: 100%; display: flex; justify-content: space-between; align-items: center; padding: 0 7px; box-sizing: border-box;">
+                <span style="font-size: 0.9rem;">${state.topCard.number}</span>
+                <span style="font-size: 0.95rem;">${topFace}</span>
+            </div>
+            <div style="font-size: 1.75rem; margin: 3px 0;">${shapeSymbols[state.topCard.shape] || state.topCard.shape}</div>
+            <div style="font-size: 0.62rem; text-transform: uppercase;">${state.topCard.shape}</div>
         `;
 
         const shapeBadge = document.getElementById('whot-called-shape-badge');
         if (state.calledShape) {
             shapeBadge.style.display = 'block';
-            shapeBadge.innerText = `Requested Shape: ${shapeSymbols[state.calledShape]} ${state.calledShape.toUpperCase()}`;
+            shapeBadge.innerText = `Requested Shape: ${shapeFaceEmojis[state.calledShape] || ''} ${shapeSymbols[state.calledShape]} ${state.calledShape.toUpperCase()}`;
         } else {
             shapeBadge.style.display = 'none';
         }
@@ -3294,11 +3550,15 @@
         const handContainer = document.getElementById('whot-my-hand');
         handContainer.innerHTML = '';
         state.myHand.forEach((card, idx) => {
+            const cardFace = getWhotCardFace(card);
             const cardBtn = document.createElement('div');
-            cardBtn.style.cssText = `min-width: 72px; height: 105px; background: #fff; color: #7f1d1d; border: 2px solid ${isMyTurn ? '#00ff66' : '#64748b'}; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: 'Orbitron', sans-serif; font-weight: 900; cursor: pointer; flex-shrink: 0; user-select: none;`;
+            cardBtn.style.cssText = `min-width: 74px; height: 108px; background: #fff; color: #7f1d1d; border: 2px solid ${isMyTurn ? '#00ff66' : '#64748b'}; border-radius: 9px; display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 6px 0; box-sizing: border-box; font-family: 'Orbitron', sans-serif; font-weight: 900; cursor: pointer; flex-shrink: 0; user-select: none; box-shadow: 0 4px 10px rgba(0,0,0,0.45);`;
             cardBtn.innerHTML = `
-                <div style="font-size: 0.85rem;">${card.number}</div>
-                <div style="font-size: 1.5rem; margin: 2px 0;">${shapeSymbols[card.shape]}</div>
+                <div style="width: 100%; display: flex; justify-content: space-between; align-items: center; padding: 0 6px; box-sizing: border-box;">
+                    <span style="font-size: 0.85rem;">${card.number}</span>
+                    <span style="font-size: 0.9rem;">${cardFace}</span>
+                </div>
+                <div style="font-size: 1.55rem; line-height: 1;">${shapeSymbols[card.shape]}</div>
                 <div style="font-size: 0.55rem; text-transform: uppercase;">${card.shape}</div>
             `;
             cardBtn.onclick = () => playWhotCard(idx, card);
@@ -3384,6 +3644,16 @@
 
             turnBanner.innerHTML = `<strong style="color:#00ff66;">🎉 VICTORY! YOU WON ₦${data.netWinnings.toLocaleString()}!</strong>`;
             document.getElementById('whot-action-log').innerText = `Credited to your wallet (after ${data.commissionPercent}% fee).`;
+
+            showWinModal({
+                gameLabel: 'NAIJA WHOT 1v1 VICTORY',
+                title: 'CHECK UP! YOU WON!',
+                amountText: `+₦${Number(data.netWinnings || 0).toLocaleString()}`,
+                subtitle: data.reason === 'opponent_disconnected'
+                    ? 'Opponent disconnected—match payout credited!'
+                    : `Credited to your wallet (after ${data.commissionPercent}% fee).`,
+                emoji: '🃏🏆'
+            });
         } else {
             turnBanner.innerHTML = `<strong style="color:#ff003c;">❌ GAME OVER! ${data.winner} WON!</strong>`;
         }
