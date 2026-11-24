@@ -400,21 +400,20 @@
         .chat-send-btn:hover { background: #fff; box-shadow: 0 0 15px rgba(255,255,255,0.8); }
 
         /* ==========================================
-           NEON MIND-VAULT: EMOJI QUESTION 1v1 ARENA
+           EMERALD GREEN FELT BOARD: EMOJI QUESTION 1v1
            ========================================== */
         #eq-game-screen.screen-section.active {
             display: block;
             position: relative;
-            background-color: #0b0718;
+            background-color: #065f46;
             background-image:
-                radial-gradient(circle at 50% 18%, rgba(0, 243, 255, 0.22) 0%, rgba(139, 92, 246, 0.16) 42%, rgba(9, 7, 20, 0.96) 82%),
-                linear-gradient(rgba(0, 243, 255, 0.08) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(168, 85, 247, 0.08) 1px, transparent 1px);
-            background-size: 100% 100%, 22px 22px, 22px 22px;
-            border: 1px solid rgba(0, 243, 255, 0.45);
+                radial-gradient(circle at 50% 20%, rgba(16, 185, 129, 0.25) 0%, rgba(6, 78, 59, 0.92) 55%, rgba(2, 44, 34, 0.98) 100%),
+                repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.025) 0px, rgba(255, 255, 255, 0.025) 2px, transparent 2px, transparent 6px),
+                repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.06) 0px, rgba(0, 0, 0, 0.06) 2px, transparent 2px, transparent 6px);
+            border: 2px solid rgba(250, 204, 21, 0.55);
             border-radius: 14px;
             padding: 16px 14px;
-            box-shadow: inset 0 0 28px rgba(0, 243, 255, 0.1), 0 0 24px rgba(139, 92, 246, 0.22);
+            box-shadow: inset 0 0 0 3px rgba(250, 204, 21, 0.16), inset 0 0 32px rgba(0, 0, 0, 0.65);
         }
 
         /* ==========================================
@@ -918,7 +917,7 @@
         </div>
     </div>
 
-    <!-- EMOJI QUESTION ACTIVE 1v1 ARENA SCREEN (NEON MIND-VAULT + 4-EMOJI PICK & GUESS) -->
+    <!-- EMOJI QUESTION ACTIVE 1v1 ARENA SCREEN (EMERALD GREEN FELT + 4-EMOJI PICK & GUESS) -->
     <div id="eq-game-screen" class="screen-section">
         <h1 id="eq-active-title">Emoji Question 1v1</h1>
         <div class="user-panel">
@@ -937,7 +936,7 @@
             <div>Turn Time: <span class="timer" id="eq-timer">20s</span></div>
         </div>
 
-        <div style="display: flex; justify-content: space-around; background: rgba(0,0,0,0.45); padding: 8px 12px; border-radius: 8px; margin-bottom: 12px; font-family:'Orbitron',sans-serif; font-size: 0.85rem; border: 1px solid rgba(168, 85, 247, 0.25);">
+        <div style="display: flex; justify-content: space-around; background: rgba(0,0,0,0.45); padding: 8px 12px; border-radius: 8px; margin-bottom: 12px; font-family:'Orbitron',sans-serif; font-size: 0.85rem; border: 1px solid rgba(250, 204, 21, 0.35);">
             <div><span id="eq-p1-label">P1</span>: <strong id="eq-score-1" style="color: var(--neon-blue);">0</strong></div>
             <div>VS</div>
             <div><span id="eq-p2-label">P2</span>: <strong id="eq-score-2" style="color: var(--neon-gold);">0</strong></div>
