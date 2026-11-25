@@ -417,7 +417,7 @@
         }
 
         /* ==========================================
-           OPTION 1: CLASSIC EMERALD FELT WHOT TABLE
+           CLASSIC EMERALD FELT WHOT TABLE (2P & 3P)
            ========================================== */
         #whot-game-screen.screen-section.active {
             display: block;
@@ -460,6 +460,34 @@
             pointer-events: none;
             user-select: none;
             letter-spacing: 4px;
+        }
+
+        .whot-rivals-bar {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+
+        .whot-rival-chip {
+            flex: 1;
+            min-width: 125px;
+            background: rgba(15, 23, 42, 0.78);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 8px;
+            padding: 7px 10px;
+            font-size: 0.85rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.2s ease;
+        }
+
+        .whot-rival-chip.active-turn {
+            border-color: var(--neon-gold);
+            box-shadow: 0 0 12px rgba(250, 204, 21, 0.45);
+            background: rgba(250, 204, 21, 0.14);
         }
 
         /* ==========================================
@@ -733,8 +761,8 @@
 
         <div class="group-card" onclick="selectGame('whot')" style="cursor: pointer;">
             <div class="group-info">
-                <h3>🃏 Naija Whot 1v1</h3>
-                <p>Emerald felt table duel with Pick Two &amp; General Market.</p>
+                <h3>🃏 Naija Whot (2P / 3P)</h3>
+                <p>Choose 2 or 3 players on the emerald felt table!</p>
             </div>
             <button class="group-btn">Play</button>
         </div>
@@ -1019,14 +1047,23 @@
         <div id="eq-message" style="margin-top: 12px; font-size: 0.95rem; min-height: 24px;"></div>
     </div>
 
-    <!-- NAIJA WHOT LOBBY SCREEN -->
+    <!-- NAIJA WHOT LOBBY SCREEN (WITH 2-PLAYER / 3-PLAYER SELECTOR) -->
     <div id="whot-lobby-screen" class="screen-section">
         <h1><span class="app-logo">🃏</span> Naija Whot Arena</h1>
-        <div class="subtitle">Classic 1v1 Card Duel</div>
+        <div class="subtitle" id="whot-mode-subtitle">Choose 2-Player 1v1 or 3-Player 3x Pot Table</div>
 
         <div class="user-panel">
             <span>👤 <strong id="whot-display-user"></strong></span>
             <button class="btn-secondary" onclick="switchScreen('game-hub-screen')" style="margin-top: 0; padding: 6px 12px; font-size: 0.8rem;">← Arcade Lobby</button>
+        </div>
+
+        <!-- PLAYER COUNT SELECTOR (2 PLAYERS VS 3 PLAYERS) -->
+        <div style="margin-bottom: 14px; text-align: left;">
+            <p style="font-size: 0.8rem; color: var(--neon-gold); margin: 0 0 8px 0; text-transform: uppercase; font-family:'Orbitron',sans-serif;">Select Table Size:</p>
+            <div class="wallet-actions" style="margin-bottom: 0;">
+                <button type="button" class="wallet-tab active" id="whot-count-2-btn" onclick="setWhotPlayerCount(2)">👤 2 Players (2x Pot)</button>
+                <button type="button" class="wallet-tab" id="whot-count-3-btn" onclick="setWhotPlayerCount(3)">👥 3 Players (3x Pot)</button>
+            </div>
         </div>
 
         <p style="font-size: 0.85rem; color: #94a3b8; text-align: left; margin-bottom: 10px; text-transform: uppercase; font-family:'Orbitron',sans-serif;">Select Whot Stake Tier:</p>
@@ -1034,7 +1071,7 @@
         <div class="group-card">
             <div class="group-info">
                 <h3>🎮 Whot Micro Table</h3>
-                <p>Stake: ₦100 | 2 Players | Payout: ₦200</p>
+                <p id="whot-desc-100">Stake: ₦100 | 2 Players | Payout: ₦200</p>
                 <p id="whot-stat-100" style="color: #00ff66; margin-top: 2px; font-size: 0.8rem;">🟢 0 Active | ⏳ 0 Waiting</p>
             </div>
             <button class="group-btn" onclick="joinWhotQueue(100, 'Whot Micro Table')">Play</button>
@@ -1043,7 +1080,7 @@
         <div class="group-card">
             <div class="group-info">
                 <h3>🥉 Whot Rookie Room</h3>
-                <p>Stake: ₦500 | 2 Players | Payout: ₦1,000</p>
+                <p id="whot-desc-500">Stake: ₦500 | 2 Players | Payout: ₦1,000</p>
                 <p id="whot-stat-500" style="color: #00ff66; margin-top: 2px; font-size: 0.8rem;">🟢 0 Active | ⏳ 0 Waiting</p>
             </div>
             <button class="group-btn" onclick="joinWhotQueue(500, 'Whot Rookie Room')">Play</button>
@@ -1052,7 +1089,7 @@
         <div class="group-card">
             <div class="group-info">
                 <h3>🥈 Whot Pro Lounge</h3>
-                <p>Stake: ₦1,000 | 2 Players | Payout: ₦2,000</p>
+                <p id="whot-desc-1000">Stake: ₦1,000 | 2 Players | Payout: ₦2,000</p>
                 <p id="whot-stat-1000" style="color: #00ff66; margin-top: 2px; font-size: 0.8rem;">🟢 0 Active | ⏳ 0 Waiting</p>
             </div>
             <button class="group-btn" onclick="joinWhotQueue(1000, 'Whot Pro Lounge')">Play</button>
@@ -1061,7 +1098,7 @@
         <div class="group-card vip-card">
             <div class="group-info">
                 <h3>👑 Whot Master Chamber</h3>
-                <p>Stake: ₦5,000 | 2 Players | Payout: ₦10,000</p>
+                <p id="whot-desc-5000">Stake: ₦5,000 | 2 Players | Payout: ₦10,000</p>
                 <p id="whot-stat-5000" style="color: var(--neon-gold); margin-top: 2px; font-size: 0.8rem;">🟢 0 Active | ⏳ 0 Waiting</p>
             </div>
             <button class="group-btn vip-btn" onclick="joinWhotQueue(5000, 'Whot Master Chamber')">Play</button>
@@ -1070,7 +1107,7 @@
         <div class="group-card vip-card">
             <div class="group-info">
                 <h3>💎 Whot Diamond Arena</h3>
-                <p>Stake: ₦10,000 | 2 Players | Payout: ₦20,000</p>
+                <p id="whot-desc-10000">Stake: ₦10,000 | 2 Players | Payout: ₦20,000</p>
                 <p id="whot-stat-10000" style="color: var(--neon-gold); margin-top: 2px; font-size: 0.8rem;">🟢 0 Active | ⏳ 0 Waiting</p>
             </div>
             <button class="group-btn vip-btn" onclick="joinWhotQueue(10000, 'Whot Diamond Arena')">Play</button>
@@ -1079,7 +1116,7 @@
         <div class="group-card vip-card">
             <div class="group-info">
                 <h3>👑 Whot Executive Lounge</h3>
-                <p>Stake: ₦25,000 | 2 Players | Payout: ₦50,000</p>
+                <p id="whot-desc-25000">Stake: ₦25,000 | 2 Players | Payout: ₦50,000</p>
                 <p id="whot-stat-25000" style="color: var(--neon-gold); margin-top: 2px; font-size: 0.8rem;">🟢 0 Active | ⏳ 0 Waiting</p>
             </div>
             <button class="group-btn vip-btn" onclick="joinWhotQueue(25000, 'Whot Executive Lounge')">Play</button>
@@ -1122,23 +1159,31 @@
         <button class="btn btn-secondary" onclick="switchScreen('game-hub-screen')">Back to Arcade Hub</button>
     </div>
 
-    <!-- NAIJA WHOT ACTIVE GAME SCREEN (EMERALD FELT + LAUGHING EMOJI POPUP + FACE BADGED CARDS) -->
+    <!-- NAIJA WHOT ACTIVE GAME SCREEN (EMERALD FELT + 2P/3P RIVALS + LAUGHING EMOJI POPUP) -->
     <div id="whot-game-screen" class="screen-section">
         <!-- SPECIAL ACTION LAUGHING EMOJI OVERLAY -->
         <div id="whot-action-popup"></div>
 
-        <h1><span class="app-logo">🃏</span> Naija Whot 1v1</h1>
-        <div class="user-panel">
-            <span>⚔️ Rival: <strong id="whot-opponent-name">Searching...</strong> (<span id="whot-opponent-cards">0</span> 🃏)</span>
+        <h1 id="whot-game-header-title"><span class="app-logo">🃏</span> Naija Whot</h1>
+        <div class="user-panel" style="margin-bottom: 10px;">
+            <span>👥 Mode: <strong id="whot-mode-badge" style="color: var(--neon-gold);">2 Players</strong></span>
             <button class="logout-btn" onclick="leaveWhotGame()">Exit</button>
         </div>
 
-        <div class="turn-indicator-box" id="whot-turn-banner">⏳ Searching for Whot opponent...</div>
+        <!-- DYNAMIC RIVALS BAR (SHOWS 1 RIVAL IN 2P, OR 2 RIVALS IN 3P) -->
+        <div id="whot-rivals-container" class="whot-rivals-bar">
+            <div class="whot-rival-chip">
+                <span>⚔️ <strong id="whot-opponent-name">Searching...</strong></span>
+                <span><strong id="whot-opponent-cards">0</strong> 🃏</span>
+            </div>
+        </div>
+
+        <div class="turn-indicator-box" id="whot-turn-banner">⏳ Searching for Whot players...</div>
         <div id="whot-action-log" style="font-size: 0.85rem; color: var(--neon-gold); margin-bottom: 10px; min-height: 20px;"></div>
 
         <!-- WHATSAPP WHOT INVITE CONTAINER -->
         <div id="whot-whatsapp-invite-box" style="display: none; margin-bottom: 15px; padding: 12px; background: rgba(15, 23, 42, 0.75); border: 1px solid #25D366; border-radius: 8px;">
-            <p style="margin: 0 0 8px 0; font-size: 0.85rem; color: #25D366; font-family:'Orbitron',sans-serif;">📱 Want to challenge a friend privately?</p>
+            <p style="margin: 0 0 8px 0; font-size: 0.85rem; color: #25D366; font-family:'Orbitron',sans-serif;">📱 Want to invite friends privately?</p>
             <button class="btn" style="background: linear-gradient(45deg, #128C7E, #25D366); color: #fff; margin-top: 0; padding: 10px; font-size: 0.85rem;" onclick="shareWhotWhatsAppInvite()">
                 📲 Create &amp; Share WhatsApp Challenge
             </button>
@@ -1455,6 +1500,8 @@
     let selectedStake = 0;
     let selectedGroupName = "Micro Lounge";
     let activeGameMode = null;
+    let selectedWhotPlayerCount = 2;
+    let latestLoungeStats = null;
     let treasureIndex = -1;
     let currentTreasureEmoji = '💎';
     let gameActive = false;
@@ -1554,8 +1601,50 @@
         }
     });
 
+    function renderWhotLobbyStatsAndPayouts() {
+        const stakeTiers = [100, 500, 1000, 5000, 10000, 25000];
+        const pc = selectedWhotPlayerCount;
+        const wWaitingMap = latestLoungeStats
+            ? (pc === 3 ? latestLoungeStats.whot3WaitingCounts : latestLoungeStats.whotWaitingCounts)
+            : {};
+        const wActiveMap = latestLoungeStats
+            ? (pc === 3 ? latestLoungeStats.whot3ActiveCounts : latestLoungeStats.whotActiveCounts)
+            : {};
+
+        stakeTiers.forEach(stake => {
+            const descEl = document.getElementById(`whot-desc-${stake}`);
+            if (descEl) {
+                descEl.innerText = `Stake: ₦${stake.toLocaleString()} | ${pc} Players | Payout: ₦${(stake * pc).toLocaleString()}`;
+            }
+
+            const wWaiting = wWaitingMap && wWaitingMap[stake] ? wWaitingMap[stake] : 0;
+            const wActive = wActiveMap && wActiveMap[stake] ? wActiveMap[stake] : 0;
+            const wStatEl = document.getElementById(`whot-stat-${stake}`);
+            if (wStatEl) {
+                wStatEl.innerHTML = `🟢 ${wActive} Active | ⏳ ${wWaiting}/${pc} Waiting`;
+            }
+        });
+    }
+
+    function setWhotPlayerCount(count) {
+        selectedWhotPlayerCount = count === 3 ? 3 : 2;
+        const btn2 = document.getElementById('whot-count-2-btn');
+        const btn3 = document.getElementById('whot-count-3-btn');
+        if (btn2) btn2.classList.toggle('active', selectedWhotPlayerCount === 2);
+        if (btn3) btn3.classList.toggle('active', selectedWhotPlayerCount === 3);
+
+        const sub = document.getElementById('whot-mode-subtitle');
+        if (sub) {
+            sub.innerText = selectedWhotPlayerCount === 3
+                ? '3-Player Whot Table • Winner Takes 3x Pot'
+                : 'Classic 2-Player 1v1 Card Duel • 2x Pot';
+        }
+        renderWhotLobbyStatsAndPayouts();
+    }
+
     socket.on('lounge_stats_update', (data) => {
-        const { waitingCounts, activeCounts, whotWaitingCounts, whotActiveCounts, eqWaitingCounts, eqActiveCounts } = data;
+        latestLoungeStats = data;
+        const { waitingCounts, activeCounts, eqWaitingCounts, eqActiveCounts } = data;
         const stakeTiers = [100, 500, 1000, 5000, 10000, 25000];
         
         stakeTiers.forEach(stake => {
@@ -1566,13 +1655,6 @@
                 statEl.innerHTML = `🟢 ${active} Active Hunters | ⏳ ${waiting} Waiting`;
             }
 
-            const wWaiting = whotWaitingCounts && whotWaitingCounts[stake] ? whotWaitingCounts[stake] : 0;
-            const wActive = whotActiveCounts && whotActiveCounts[stake] ? whotActiveCounts[stake] : 0;
-            const wStatEl = document.getElementById(`whot-stat-${stake}`);
-            if (wStatEl) {
-                wStatEl.innerHTML = `🟢 ${wActive} Active | ⏳ ${wWaiting} Waiting`;
-            }
-
             const qWaiting = eqWaitingCounts && eqWaitingCounts[stake] ? eqWaitingCounts[stake] : 0;
             const qActive = eqActiveCounts && eqActiveCounts[stake] ? eqActiveCounts[stake] : 0;
             const qStatEl = document.getElementById(`eq-stat-${stake}`);
@@ -1580,6 +1662,8 @@
                 qStatEl.innerHTML = `🟢 ${qActive} Active | ⏳ ${qWaiting} Waiting`;
             }
         });
+
+        renderWhotLobbyStatsAndPayouts();
     });
 
     function syncAllUserLabels(username) {
@@ -1621,7 +1705,7 @@
             const bannerText = document.getElementById('challenge-banner-text');
             if (banner && bannerText) {
                 banner.style.display = 'block';
-                bannerText.innerHTML = `🎮 You have been invited to a private 1v1 challenge match! Register or log in to accept.`;
+                bannerText.innerHTML = `🎮 You have been invited to a private challenge match! Register or log in to accept.`;
             }
 
             if (!isRegistering && !currentUser) {
@@ -1647,7 +1731,12 @@
                     activeGameMode = 'whot';
                     lastWhotAction = '';
                     switchScreen('whot-game-screen');
-                    document.getElementById('whot-turn-banner').innerText = "⏳ Joining private challenge match...";
+                    if (res.waitingMore) {
+                        document.getElementById('whot-mode-badge').innerText = `${res.requiredPlayers} Players`;
+                        document.getElementById('whot-turn-banner').innerText = `⏳ Joined (${res.joinedCount}/${res.requiredPlayers})! Waiting for 3rd player...`;
+                    } else {
+                        document.getElementById('whot-turn-banner').innerText = "⏳ Joining private challenge match...";
+                    }
                 } else if (res.gameType === 'emoji-question') {
                     activeGameMode = 'emoji-question';
                     switchScreen('eq-game-screen');
@@ -1678,6 +1767,7 @@
             updateLobbyWallet();
         } else if (gameId === 'whot') {
             switchScreen('whot-lobby-screen');
+            renderWhotLobbyStatsAndPayouts();
             updateLobbyWallet();
         } else if (gameId === 'ludo') {
             alert("Ludo Blitz launching soon! Jump into whot, emoji question, or emoji treasure hunt right now.");
@@ -2244,15 +2334,21 @@
 
     function shareWhotWhatsAppInvite() {
         const stakeText = selectedStake ? `₦${selectedStake.toLocaleString()}` : 'our match';
+        const modeText = selectedWhotPlayerCount === 3 ? '3-Player Naija Whot' : 'Naija Whot 1v1';
         if (activeChallengeCode) {
-            const text = encodeURIComponent(`🎮 Join my private Naija Whot 1v1 match! Stake: ${stakeText}. Click here to join: ${window.location.origin}/?challenge=${activeChallengeCode}&ref=${encodeURIComponent(currentUser)}`);
+            const text = encodeURIComponent(`🎮 Join my private ${modeText} match! Stake: ${stakeText}. Click here to join: ${window.location.origin}/?challenge=${activeChallengeCode}&ref=${encodeURIComponent(currentUser)}`);
             window.open(`https://wa.me/?text=${text}`, '_blank');
             return;
         }
-        socket.emit('create_challenge', { username: currentUser, stake: selectedStake, gameType: 'whot' }, (res) => {
+        socket.emit('create_challenge', {
+            username: currentUser,
+            stake: selectedStake,
+            gameType: 'whot',
+            playerCount: selectedWhotPlayerCount
+        }, (res) => {
             if (res && res.success) {
                 activeChallengeCode = res.challengeCode;
-                const text = encodeURIComponent(`🎮 Join my private Naija Whot 1v1 match! Stake: ${stakeText}. Click here to join: ${window.location.origin}/?challenge=${activeChallengeCode}&ref=${encodeURIComponent(currentUser)}`);
+                const text = encodeURIComponent(`🎮 Join my private ${modeText} match! Stake: ${stakeText}. Click here to join: ${window.location.origin}/?challenge=${activeChallengeCode}&ref=${encodeURIComponent(currentUser)}`);
                 window.open(`https://wa.me/?text=${text}`, '_blank');
             } else {
                 alert("Could not generate invite link right now.");
@@ -3431,7 +3527,7 @@
     }
 
     // ==========================================
-    // NAIJA WHOT CLIENT LOGIC (EMERALD FELT, LAUGH POPUP & FACE CARDS)
+    // NAIJA WHOT CLIENT LOGIC (2P & 3P, EMERALD FELT, LAUGH POPUP & FACE CARDS)
     // ==========================================
     let pendingWhot20CardIndex = null;
     let whotTurnInterval = null;
@@ -3488,6 +3584,27 @@
         }, 2500);
     }
 
+    function renderWhotRivalsBar(opponents, activeTurnUsername) {
+        const container = document.getElementById('whot-rivals-container');
+        if (!container) return;
+        container.innerHTML = '';
+
+        const list = Array.isArray(opponents) && opponents.length > 0
+            ? opponents
+            : [{ username: 'Searching...', cardCount: 0 }];
+
+        list.forEach(opp => {
+            const isRivalTurn = opp.username === activeTurnUsername;
+            const chip = document.createElement('div');
+            chip.className = 'whot-rival-chip' + (isRivalTurn ? ' active-turn' : '');
+            chip.innerHTML = `
+                <span>⚔️ <strong>${escapeHtml(opp.username)}</strong>${isRivalTurn ? ' 🎯' : ''}</span>
+                <span><strong>${opp.cardCount}</strong> 🃏</span>
+            `;
+            container.appendChild(chip);
+        });
+    }
+
     function joinWhotQueue(stakeAmount, roomTitle) {
         const username = localStorage.getItem('emoji_current_user_secure');
         if (!username) return alert("Please log in first!");
@@ -3500,15 +3617,24 @@
             return;
         }
 
+        const pc = selectedWhotPlayerCount;
         selectedStake = stakeAmount;
         activeGameMode = 'whot';
         gameActive = false;
         activeChallengeCode = null;
         lastWhotAction = '';
+
         switchScreen('whot-game-screen');
-        document.getElementById('whot-opponent-name').innerText = 'Searching...';
-        document.getElementById('whot-opponent-cards').innerText = '0';
-        document.getElementById('whot-turn-banner').innerText = '⏳ Waiting for opponent to join table...';
+        document.getElementById('whot-mode-badge').innerText = `${pc} Players (₦${(stakeAmount * pc).toLocaleString()} Pot)`;
+        renderWhotRivalsBar(
+            pc === 3
+                ? [{ username: 'Waiting R1...', cardCount: 0 }, { username: 'Waiting R2...', cardCount: 0 }]
+                : [{ username: 'Searching...', cardCount: 0 }],
+            null
+        );
+        document.getElementById('whot-turn-banner').innerText = pc === 3
+            ? '⏳ Waiting for 2 more players to join table...'
+            : '⏳ Waiting for opponent to join table...';
         document.getElementById('whot-my-hand').innerHTML = '';
         document.getElementById('whot-whatsapp-invite-box').style.display = 'block';
 
@@ -3516,7 +3642,8 @@
         socket.emit('join_queue', {
             username,
             stake: stakeAmount,
-            gameType: 'whot'
+            gameType: 'whot',
+            playerCount: pc
         });
     }
 
@@ -3525,8 +3652,18 @@
         gameActive = true;
         isMyTurn = (state.turn === currentUser);
 
-        document.getElementById('whot-opponent-name').innerText = state.opponentName;
-        document.getElementById('whot-opponent-cards').innerText = state.opponentCardCount;
+        const activeCount = Array.isArray(state.players) ? state.players.length : (state.playerCount || 2);
+        const totalPot = Number(state.stake || selectedStake || 0) * (state.playerCount || activeCount);
+        const modeBadge = document.getElementById('whot-mode-badge');
+        if (modeBadge) {
+            modeBadge.innerText = `${activeCount}P Active (₦${totalPot.toLocaleString()} Pot)`;
+        }
+
+        const opponentsList = Array.isArray(state.opponents)
+            ? state.opponents
+            : [{ username: state.opponentName || 'Opponent', cardCount: state.opponentCardCount || 0 }];
+        renderWhotRivalsBar(opponentsList, state.turn);
+
         document.getElementById('whot-market-count').innerText = `(${state.marketCount})`;
         document.getElementById('whot-action-log').innerText = state.lastAction || '';
         document.getElementById('whot-whatsapp-invite-box').style.display = 'none';
@@ -3554,7 +3691,8 @@
             turnBanner.style.borderColor = '#00ff66';
         } else {
             clearInterval(whotTurnInterval);
-            turnBanner.innerHTML = `⏳ <strong style="color:#ff003c;">${state.opponentName}'S TURN...</strong>`;
+            const activeRivalName = state.turn || (opponentsList[0] && opponentsList[0].username) || 'Rival';
+            turnBanner.innerHTML = `⏳ <strong style="color:#ff003c;">${escapeHtml(activeRivalName)}'S TURN...</strong>`;
             turnBanner.style.borderColor = '#ff003c';
         }
 
@@ -3676,7 +3814,7 @@
             document.getElementById('whot-action-log').innerText = `Credited to your wallet (after ${data.commissionPercent}% fee).`;
 
             showWinModal({
-                gameLabel: 'NAIJA WHOT 1v1 VICTORY',
+                gameLabel: 'NAIJA WHOT VICTORY',
                 title: 'CHECK UP! YOU WON!',
                 amountText: `+₦${Number(data.netWinnings || 0).toLocaleString()}`,
                 subtitle: data.reason === 'opponent_disconnected'
@@ -3703,6 +3841,7 @@
         }
         activeGameMode = null;
         switchScreen('whot-lobby-screen');
+        renderWhotLobbyStatsAndPayouts();
         updateLobbyWallet();
     }
 </script>

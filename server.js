@@ -35,7 +35,7 @@ let otpStorage = {};
 // Track active user sessions to prevent multi-device login: username -> socketId
 let activeUserSessions = {};
 
-// Private reserved challenge slots for WhatsApp 1v1 invites: challengeCode -> { hostUsername, stake, gameType, socketId, createdAt }
+// Private reserved challenge slots for WhatsApp invites: challengeCode -> { hostUsername, stake, gameType, playerCount, socketId, createdAt }
 let reservedChallenges = {};
 
 // Helper function for making HTTPS requests to Paystack API
@@ -416,7 +416,7 @@ app.post('/verify-bank-account', (req, res) => {
 });
 
 // ==========================================
-// 3. MULTI-GAME ENGINE HELPERS (TREASURE, WHOT & EMOJI QUESTION)
+// 3. MULTI-GAME ENGINE HELPERS (TREASURE, WHOT 2P/3P & EMOJI QUESTION)
 // ==========================================
 let waitingPlayers = [];
 let activeRooms = {};
@@ -449,15 +449,42 @@ function generateWhotDeck() {
     return deck;
 }
 
+function getNextWhotPlayer(room, currentUsername, skipCount = 0) {
+    const list = room.players;
+    const idx = list.indexOf(currentUsername);
+    if (idx === -1 || list.length === 0) return list[0];
+    const nextIdx = (idx + 1 + skipCount) % list.length;
+    return list[nextIdx];
+}
+
+function drawFromWhotDeck(room, count) {
+    const drawn = [];
+    for (let i = 0; i < count; i++) {
+        if (room.deck.length === 0 && room.discardPile.length > 1) {
+            const currentTop = room.discardPile.pop();
+            room.deck = room.discardPile.splice(0);
+            room.discardPile = [currentTop];
+            for (let j = room.deck.length - 1; j > 0; j--) {
+                const k = Math.floor(Math.random() * (j + 1));
+                [room.deck[j], room.deck[k]] = [room.deck[k], room.deck[j]];
+            }
+        }
+        if (room.deck.length > 0) {
+            drawn.push(room.deck.pop());
+        }
+    }
+    return drawn;
+}
+
 async function settleMatchWinner(room, winner, gameLabel = 'Emoji Treasure Hunt') {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
 
-        const [player1, player2] = room.players;
-        const loser = player1 === winner ? player2 : player1;
+        const participants = room.initialPlayers || room.players;
+        const losers = participants.filter(p => p !== winner);
         const stake = Number(room.stake);
-        const totalPool = stake * 2;
+        const totalPool = stake * participants.length;
 
         const commissionRate = stake >= 5000 ? 0.05 : 0.08;
         const totalCommission = Math.round(totalPool * commissionRate);
@@ -473,10 +500,12 @@ async function settleMatchWinner(room, winner, gameLabel = 'Emoji Treasure Hunt'
             ['WIN', netWinnings, `Won ₦${totalPool.toLocaleString()} ${gameLabel} pool (${commissionRate * 100}% fee: ₦${totalCommission.toLocaleString()})`, winner]
         );
 
-        await client.query(
-            'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
-            ['LOSS', stake, `Lost ${gameLabel} match`, loser]
-        );
+        for (const loser of losers) {
+            await client.query(
+                'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
+                ['LOSS', stake, `Lost ${gameLabel} match`, loser]
+            );
+        }
 
         const winnerRes = await client.query('SELECT referred_by FROM users WHERE username = $1', [winner]);
         const referrerUsername = winnerRes.rows.length > 0 ? winnerRes.rows[0].referred_by : null;
@@ -526,15 +555,25 @@ function emitWhotState(roomId) {
     if (!room || room.gameType !== 'whot') return;
 
     room.players.forEach(playerUsername => {
-        const opponentUsername = room.players.find(p => p !== playerUsername);
+        const opponents = room.players
+            .filter(p => p !== playerUsername)
+            .map(oppName => ({
+                username: oppName,
+                cardCount: room.hands[oppName] ? room.hands[oppName].length : 0
+            }));
+        const primaryOpponent = opponents[0] || { username: 'Opponent', cardCount: 0 };
+
         const socketId = activeUserSessions[playerUsername];
         if (socketId) {
             io.to(socketId).emit('whot_state_update', {
                 roomId,
                 stake: room.stake,
+                playerCount: room.playerCount || room.players.length,
+                players: room.players,
                 myHand: room.hands[playerUsername],
-                opponentCardCount: room.hands[opponentUsername] ? room.hands[opponentUsername].length : 0,
-                opponentName: opponentUsername,
+                opponents,
+                opponentCardCount: primaryOpponent.cardCount,
+                opponentName: primaryOpponent.username,
                 topCard: room.topCard,
                 calledShape: room.calledShape,
                 marketCount: room.deck.length,
@@ -544,6 +583,38 @@ function emitWhotState(roomId) {
             });
         }
     });
+}
+
+function createWhotRoom(roomId, matchedPlayers, numericStake, playerCount) {
+    const deck = generateWhotDeck();
+    const hands = {};
+    const playerUsernames = matchedPlayers.map(p => p.username);
+
+    playerUsernames.forEach(uname => {
+        hands[uname] = deck.splice(0, 5);
+    });
+
+    let firstCardIdx = deck.findIndex(c => c.shape !== 'whot' && ![1, 2, 8, 14].includes(c.number));
+    if (firstCardIdx === -1) firstCardIdx = 0;
+    const topCard = deck.splice(firstCardIdx, 1)[0];
+
+    activeRooms[roomId] = {
+        gameType: 'whot',
+        playerCount,
+        players: [...playerUsernames],
+        initialPlayers: [...playerUsernames],
+        stake: numericStake,
+        deck,
+        discardPile: [topCard],
+        hands,
+        topCard,
+        calledShape: null,
+        turn: playerUsernames[0],
+        pendingPick: 0,
+        lastAction: `${playerCount}-Player Match started! Top card is ${topCard.shape.toUpperCase()} ${topCard.number}`
+    };
+
+    emitWhotState(roomId);
 }
 
 // ==========================================
@@ -616,7 +687,6 @@ function advanceEqTurn(roomId) {
     if (!room || room.gameType !== 'emoji-question') return;
     clearEqRoomTimer(room);
 
-    // After normal 6 turns (3 rounds), end if scores are unequal; otherwise continue sudden death
     if (room.turnNumber >= EQ_TOTAL_TURNS && room.turnNumber % 2 === 0) {
         const s1 = room.scores[1] || 0;
         const s2 = room.scores[2] || 0;
@@ -672,7 +742,6 @@ function beginEqGuessPhase(roomId, emojis, secretEmoji, wasAutoPicked = false) {
     const setterName = room.players[room.setterIndex];
     const guesserName = room.players[1 - room.setterIndex];
 
-    // Send ONLY the 4 shuffled emojis to clients (never leak secretEmoji before resolution)
     io.to(roomId).emit('eq:guess_phase', {
         roomId,
         turnNumber: room.turnNumber,
@@ -705,7 +774,6 @@ function resolveEqTurn(roomId, guessedEmoji, timedOut = false) {
 
     const isCorrect = !timedOut && guessedEmoji === room.secretEmoji;
 
-    // Asymmetric scoring: +1 to guesser on right pick; +1 to setter on miss or timeout
     if (isCorrect) {
         room.scores[guesserPlayerNum] = (room.scores[guesserPlayerNum] || 0) + 1;
     } else {
@@ -753,14 +821,21 @@ io.on('connection', (socket) => {
     const broadcastLoungeStats = () => {
         let waitingCounts = {};
         let activeCounts = {};
-        let whotWaitingCounts = {};
-        let whotActiveCounts = {};
+        let whot2WaitingCounts = {};
+        let whot2ActiveCounts = {};
+        let whot3WaitingCounts = {};
+        let whot3ActiveCounts = {};
         let eqWaitingCounts = {};
         let eqActiveCounts = {};
 
         waitingPlayers.forEach(p => {
             if (p.gameType === 'whot') {
-                whotWaitingCounts[p.stake] = (whotWaitingCounts[p.stake] || 0) + 1;
+                const pc = Number(p.playerCount) === 3 ? 3 : 2;
+                if (pc === 3) {
+                    whot3WaitingCounts[p.stake] = (whot3WaitingCounts[p.stake] || 0) + 1;
+                } else {
+                    whot2WaitingCounts[p.stake] = (whot2WaitingCounts[p.stake] || 0) + 1;
+                }
             } else if (p.gameType === 'emoji-question') {
                 eqWaitingCounts[p.stake] = (eqWaitingCounts[p.stake] || 0) + 1;
             } else {
@@ -770,7 +845,12 @@ io.on('connection', (socket) => {
 
         Object.values(activeRooms).forEach(room => {
             if (room.gameType === 'whot') {
-                whotActiveCounts[room.stake] = (whotActiveCounts[room.stake] || 0) + room.players.length;
+                const pc = Number(room.playerCount) === 3 ? 3 : 2;
+                if (pc === 3) {
+                    whot3ActiveCounts[room.stake] = (whot3ActiveCounts[room.stake] || 0) + room.players.length;
+                } else {
+                    whot2ActiveCounts[room.stake] = (whot2ActiveCounts[room.stake] || 0) + room.players.length;
+                }
             } else if (room.gameType === 'emoji-question') {
                 eqActiveCounts[room.stake] = (eqActiveCounts[room.stake] || 0) + room.players.length;
             } else {
@@ -781,8 +861,10 @@ io.on('connection', (socket) => {
         io.emit('lounge_stats_update', {
             waitingCounts,
             activeCounts,
-            whotWaitingCounts,
-            whotActiveCounts,
+            whotWaitingCounts: whot2WaitingCounts,
+            whotActiveCounts: whot2ActiveCounts,
+            whot3WaitingCounts,
+            whot3ActiveCounts,
             eqWaitingCounts,
             eqActiveCounts
         });
@@ -804,28 +886,38 @@ io.on('connection', (socket) => {
         socket.authUsername = username;
     });
 
-    // Handle WhatsApp Private Challenge Room Creation
+    // Handle WhatsApp Private Challenge Room Creation (supports 2P & 3P Whot)
     socket.on('create_challenge', (data, callback) => {
-        const { username, stake, gameType } = data;
+        const { username, stake, gameType, playerCount } = data;
         if (!username || !stake || !gameType) return callback({ success: false });
 
+        const requiredPlayers = (gameType === 'whot' && Number(playerCount) === 3) ? 3 : 2;
         const challengeCode = crypto.randomBytes(6).toString('hex');
         reservedChallenges[challengeCode] = {
             socketId: socket.id,
             hostUsername: username,
             stake: Number(stake),
-            gameType: gameType,
+            gameType,
+            playerCount: requiredPlayers,
+            joinedPlayers: [{ socketId: socket.id, username }],
             createdAt: Date.now()
         };
 
         waitingPlayers = waitingPlayers.filter(p => p.username !== username);
-        waitingPlayers.push({ socketId: socket.id, username, stake: Number(stake), gameType, challengeCode });
+        waitingPlayers.push({
+            socketId: socket.id,
+            username,
+            stake: Number(stake),
+            gameType,
+            playerCount: requiredPlayers,
+            challengeCode
+        });
         broadcastLoungeStats();
 
-        callback({ success: true, challengeCode });
+        callback({ success: true, challengeCode, playerCount: requiredPlayers });
     });
 
-    // Accept & Join Private Challenge Room
+    // Accept & Join Private Challenge Room (supports 2P & 3P Whot)
     socket.on('accept_challenge', async (data, callback) => {
         const { username, challengeCode } = data;
         const challenge = reservedChallenges[challengeCode];
@@ -834,26 +926,57 @@ io.on('connection', (socket) => {
             return callback({ success: false, message: 'Challenge link expired or already played.' });
         }
 
-        if (challenge.hostUsername === username) {
-            return callback({ success: false, message: 'You cannot challenge yourself!' });
+        if (challenge.joinedPlayers.some(p => p.username === username)) {
+            return callback({ success: false, message: 'You are already in this challenge room!' });
         }
 
         const numericStake = challenge.stake;
         const gameType = challenge.gameType;
+        const requiredPlayers = challenge.playerCount || 2;
 
         const userRes = await pool.query('SELECT balance FROM users WHERE username = $1', [username]);
         if (userRes.rows.length === 0 || parseFloat(userRes.rows[0].balance) < numericStake) {
             return callback({ success: false, needDeposit: true, stake: numericStake, message: 'Insufficient wallet balance. Please deposit.' });
         }
 
-        const hostSocket = io.sockets.sockets.get(challenge.socketId);
-        if (!hostSocket) {
+        const activeJoined = challenge.joinedPlayers.filter(p => io.sockets.sockets.get(p.socketId));
+        if (activeJoined.length === 0) {
             delete reservedChallenges[challengeCode];
+            waitingPlayers = waitingPlayers.filter(p => p.challengeCode !== challengeCode);
+            broadcastLoungeStats();
             return callback({ success: false, message: 'Host is no longer waiting in the queue.' });
         }
 
-        const player1 = { socketId: challenge.socketId, username: challenge.hostUsername, stake: numericStake, gameType };
-        const player2 = { socketId: socket.id, username, stake: numericStake, gameType };
+        challenge.joinedPlayers = [...activeJoined, { socketId: socket.id, username }];
+
+        // If 3-player Whot challenge still needs 1 more player, keep waiting
+        if (challenge.joinedPlayers.length < requiredPlayers) {
+            waitingPlayers.push({
+                socketId: socket.id,
+                username,
+                stake: numericStake,
+                gameType,
+                playerCount: requiredPlayers,
+                challengeCode
+            });
+            broadcastLoungeStats();
+            return callback({
+                success: true,
+                gameType,
+                waitingMore: true,
+                joinedCount: challenge.joinedPlayers.length,
+                requiredPlayers
+            });
+        }
+
+        const matchedPlayers = challenge.joinedPlayers.map(p => ({
+            socketId: p.socketId,
+            username: p.username,
+            stake: numericStake,
+            gameType,
+            playerCount: requiredPlayers
+        }));
+
         delete reservedChallenges[challengeCode];
         waitingPlayers = waitingPlayers.filter(p => p.challengeCode !== challengeCode);
 
@@ -861,73 +984,44 @@ io.on('connection', (socket) => {
         try {
             await client.query('BEGIN');
 
-            const p1Bal = await client.query('SELECT balance FROM users WHERE username = $1 FOR UPDATE', [player1.username]);
-            const p2Bal = await client.query('SELECT balance FROM users WHERE username = $1 FOR UPDATE', [player2.username]);
-
-            if (p1Bal.rows.length === 0 || parseFloat(p1Bal.rows[0].balance) < numericStake ||
-                p2Bal.rows.length === 0 || parseFloat(p2Bal.rows[0].balance) < numericStake) {
-                await client.query('ROLLBACK');
-                broadcastLoungeStats();
-                return callback({ success: false, needDeposit: true, stake: numericStake, message: 'Insufficient balance to cover stake.' });
+            for (const p of matchedPlayers) {
+                const pBal = await client.query('SELECT balance FROM users WHERE username = $1 FOR UPDATE', [p.username]);
+                if (pBal.rows.length === 0 || parseFloat(pBal.rows[0].balance) < numericStake) {
+                    await client.query('ROLLBACK');
+                    broadcastLoungeStats();
+                    return callback({ success: false, needDeposit: true, stake: numericStake, message: 'A player has insufficient balance to cover stake.' });
+                }
             }
 
-            await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [numericStake, player1.username]);
-            await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [numericStake, player2.username]);
-
             let gameLabel = gameType === 'whot'
-                ? 'Naija Whot'
+                ? `Naija Whot (${requiredPlayers}P)`
                 : gameType === 'emoji-question'
                     ? 'Emoji Question 1v1'
                     : 'Emoji Treasure Hunt';
 
-            await client.query(
-                'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
-                ['STAKE', numericStake, `Staked ₦${numericStake.toLocaleString()} for ${gameLabel} match`, player1.username]
-            );
-            await client.query(
-                'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
-                ['STAKE', numericStake, `Staked ₦${numericStake.toLocaleString()} for ${gameLabel} match`, player2.username]
-            );
+            for (const p of matchedPlayers) {
+                await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [numericStake, p.username]);
+                await client.query(
+                    'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
+                    ['STAKE', numericStake, `Staked ₦${numericStake.toLocaleString()} for ${gameLabel} match`, p.username]
+                );
+            }
 
             await client.query('COMMIT');
 
             const roomId = `${gameType}_room_` + Date.now() + '_' + Math.floor(Math.random() * 1000);
-            const socket1 = io.sockets.sockets.get(player1.socketId);
-            const socket2 = io.sockets.sockets.get(player2.socketId);
-            if (socket1) socket1.join(roomId);
-            if (socket2) socket2.join(roomId);
+            matchedPlayers.forEach(p => {
+                const s = io.sockets.sockets.get(p.socketId);
+                if (s) s.join(roomId);
+            });
 
             if (gameType === 'whot') {
-                const deck = generateWhotDeck();
-                const hand1 = deck.splice(0, 5);
-                const hand2 = deck.splice(0, 5);
-
-                let firstCardIdx = deck.findIndex(c => c.shape !== 'whot' && ![1, 2, 8, 14].includes(c.number));
-                if (firstCardIdx === -1) firstCardIdx = 0;
-                const topCard = deck.splice(firstCardIdx, 1)[0];
-
-                activeRooms[roomId] = {
-                    gameType: 'whot',
-                    players: [player1.username, player2.username],
-                    stake: numericStake,
-                    deck,
-                    discardPile: [topCard],
-                    hands: {
-                        [player1.username]: hand1,
-                        [player2.username]: hand2
-                    },
-                    topCard,
-                    calledShape: null,
-                    turn: player1.username,
-                    pendingPick: 0,
-                    lastAction: `Match started! Top card is ${topCard.shape.toUpperCase()} ${topCard.number}`
-                };
-
-                emitWhotState(roomId);
+                createWhotRoom(roomId, matchedPlayers, numericStake, requiredPlayers);
             } else if (gameType === 'emoji-question') {
                 activeRooms[roomId] = {
                     gameType: 'emoji-question',
-                    players: [player1.username, player2.username],
+                    players: [matchedPlayers[0].username, matchedPlayers[1].username],
+                    initialPlayers: [matchedPlayers[0].username, matchedPlayers[1].username],
                     stake: numericStake,
                     turnNumber: 0,
                     setterIndex: 0,
@@ -946,17 +1040,23 @@ io.on('connection', (socket) => {
 
                 activeRooms[roomId] = {
                     gameType: 'treasure',
-                    players: [player1.username, player2.username],
+                    players: [matchedPlayers[0].username, matchedPlayers[1].username],
+                    initialPlayers: [matchedPlayers[0].username, matchedPlayers[1].username],
                     stake: numericStake,
                     targetEmoji,
                     winningIndex,
-                    turn: player1.username
+                    turn: matchedPlayers[0].username
                 };
 
-                io.to(roomId).emit('match_found', { roomId, players: [player1.username, player2.username], targetEmoji, winningIndex });
+                io.to(roomId).emit('match_found', {
+                    roomId,
+                    players: [matchedPlayers[0].username, matchedPlayers[1].username],
+                    targetEmoji,
+                    winningIndex
+                });
             }
 
-            callback({ success: true, gameType });
+            callback({ success: true, gameType, playerCount: requiredPlayers });
         } catch (err) {
             await client.query('ROLLBACK');
             console.error('Error accepting challenge:', err);
@@ -1277,11 +1377,13 @@ io.on('connection', (socket) => {
     });
 
     // ==========================================
-    // UNIFIED MULTI-GAME QUEUE (TREASURE, WHOT & EMOJI QUESTION)
+    // UNIFIED MULTI-GAME QUEUE (TREASURE, WHOT 2P/3P & EMOJI QUESTION)
     // ==========================================
     socket.on('join_queue', async (data) => {
-        const { username, stake, gameType = 'treasure' } = data;
+        const { username, stake, gameType = 'treasure', playerCount = 2 } = data;
         const numericStake = Number(stake);
+        const requiredPlayers = (gameType === 'whot' && Number(playerCount) === 3) ? 3 : 2;
+
         if (username) {
             activeUserSessions[username] = socket.id;
             socket.authUsername = username;
@@ -1294,83 +1396,66 @@ io.on('connection', (socket) => {
         }
 
         waitingPlayers = waitingPlayers.filter(p => p.username !== username && !p.challengeCode);
-        const opponentIndex = waitingPlayers.findIndex(p => Number(p.stake) === numericStake && p.gameType === gameType && !p.challengeCode);
 
-        if (opponentIndex !== -1) {
-            const player1 = waitingPlayers.splice(opponentIndex, 1)[0];
-            const player2 = { socketId: socket.id, username, stake: numericStake, gameType };
+        const matchingOpponents = waitingPlayers.filter(p =>
+            Number(p.stake) === numericStake &&
+            p.gameType === gameType &&
+            (Number(p.playerCount) === 3 ? 3 : 2) === requiredPlayers &&
+            !p.challengeCode
+        );
+
+        if (matchingOpponents.length >= requiredPlayers - 1) {
+            const pickedOpponents = matchingOpponents.slice(0, requiredPlayers - 1);
+            const pickedUsernames = new Set(pickedOpponents.map(p => p.username));
+            waitingPlayers = waitingPlayers.filter(p => !pickedUsernames.has(p.username));
+
+            const matchedPlayers = [
+                ...pickedOpponents,
+                { socketId: socket.id, username, stake: numericStake, gameType, playerCount: requiredPlayers }
+            ];
 
             const client = await pool.connect();
             try {
                 await client.query('BEGIN');
 
-                const p1Bal = await client.query('SELECT balance FROM users WHERE username = $1 FOR UPDATE', [player1.username]);
-                const p2Bal = await client.query('SELECT balance FROM users WHERE username = $1 FOR UPDATE', [player2.username]);
-
-                if (p1Bal.rows.length === 0 || parseFloat(p1Bal.rows[0].balance) < numericStake ||
-                    p2Bal.rows.length === 0 || parseFloat(p2Bal.rows[0].balance) < numericStake) {
-                    await client.query('ROLLBACK');
-                    broadcastLoungeStats();
-                    return;
+                for (const p of matchedPlayers) {
+                    const pBal = await client.query('SELECT balance FROM users WHERE username = $1 FOR UPDATE', [p.username]);
+                    if (pBal.rows.length === 0 || parseFloat(pBal.rows[0].balance) < numericStake) {
+                        await client.query('ROLLBACK');
+                        broadcastLoungeStats();
+                        return;
+                    }
                 }
 
-                await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [numericStake, player1.username]);
-                await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [numericStake, player2.username]);
-
                 let gameLabel = gameType === 'whot'
-                    ? 'Naija Whot'
+                    ? `Naija Whot (${requiredPlayers}P)`
                     : gameType === 'emoji-question'
                         ? 'Emoji Question 1v1'
                         : 'Emoji Treasure Hunt';
 
-                await client.query(
-                    'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
-                    ['STAKE', numericStake, `Staked ₦${numericStake.toLocaleString()} for ${gameLabel} match`, player1.username]
-                );
-                await client.query(
-                    'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
-                    ['STAKE', numericStake, `Staked ₦${numericStake.toLocaleString()} for ${gameLabel} match`, player2.username]
-                );
+                for (const p of matchedPlayers) {
+                    await client.query('UPDATE users SET balance = balance - $1 WHERE username = $2', [numericStake, p.username]);
+                    await client.query(
+                        'INSERT INTO transactions (email, type, amount, description) SELECT email, $1, $2, $3 FROM users WHERE username = $4',
+                        ['STAKE', numericStake, `Staked ₦${numericStake.toLocaleString()} for ${gameLabel} match`, p.username]
+                    );
+                }
 
                 await client.query('COMMIT');
 
                 const roomId = `${gameType}_room_` + Date.now() + '_' + Math.floor(Math.random() * 1000);
-                const socket1 = io.sockets.sockets.get(player1.socketId);
-                const socket2 = io.sockets.sockets.get(player2.socketId);
-                if (socket1) socket1.join(roomId);
-                if (socket2) socket2.join(roomId);
+                matchedPlayers.forEach(p => {
+                    const s = io.sockets.sockets.get(p.socketId);
+                    if (s) s.join(roomId);
+                });
 
                 if (gameType === 'whot') {
-                    const deck = generateWhotDeck();
-                    const hand1 = deck.splice(0, 5);
-                    const hand2 = deck.splice(0, 5);
-
-                    let firstCardIdx = deck.findIndex(c => c.shape !== 'whot' && ![1, 2, 8, 14].includes(c.number));
-                    if (firstCardIdx === -1) firstCardIdx = 0;
-                    const topCard = deck.splice(firstCardIdx, 1)[0];
-
-                    activeRooms[roomId] = {
-                        gameType: 'whot',
-                        players: [player1.username, player2.username],
-                        stake: numericStake,
-                        deck,
-                        discardPile: [topCard],
-                        hands: {
-                            [player1.username]: hand1,
-                            [player2.username]: hand2
-                        },
-                        topCard,
-                        calledShape: null,
-                        turn: player1.username,
-                        pendingPick: 0,
-                        lastAction: `Match started! Top card is ${topCard.shape.toUpperCase()} ${topCard.number}`
-                    };
-
-                    emitWhotState(roomId);
+                    createWhotRoom(roomId, matchedPlayers, numericStake, requiredPlayers);
                 } else if (gameType === 'emoji-question') {
                     activeRooms[roomId] = {
                         gameType: 'emoji-question',
-                        players: [player1.username, player2.username],
+                        players: [matchedPlayers[0].username, matchedPlayers[1].username],
+                        initialPlayers: [matchedPlayers[0].username, matchedPlayers[1].username],
                         stake: numericStake,
                         turnNumber: 0,
                         setterIndex: 0,
@@ -1389,14 +1474,20 @@ io.on('connection', (socket) => {
 
                     activeRooms[roomId] = {
                         gameType: 'treasure',
-                        players: [player1.username, player2.username],
+                        players: [matchedPlayers[0].username, matchedPlayers[1].username],
+                        initialPlayers: [matchedPlayers[0].username, matchedPlayers[1].username],
                         stake: numericStake,
                         targetEmoji,
                         winningIndex,
-                        turn: player1.username
+                        turn: matchedPlayers[0].username
                     };
 
-                    io.to(roomId).emit('match_found', { roomId, players: [player1.username, player2.username], targetEmoji, winningIndex });
+                    io.to(roomId).emit('match_found', {
+                        roomId,
+                        players: [matchedPlayers[0].username, matchedPlayers[1].username],
+                        targetEmoji,
+                        winningIndex
+                    });
                 }
 
             } catch (err) {
@@ -1407,7 +1498,7 @@ io.on('connection', (socket) => {
                 broadcastLoungeStats();
             }
         } else {
-            waitingPlayers.push({ socketId: socket.id, username, stake: numericStake, gameType });
+            waitingPlayers.push({ socketId: socket.id, username, stake: numericStake, gameType, playerCount: requiredPlayers });
             broadcastLoungeStats();
         }
     });
@@ -1516,7 +1607,7 @@ io.on('connection', (socket) => {
     });
 
     // ==========================================
-    // NAIJA WHOT 1V1 EVENTS & TIMEOUT
+    // NAIJA WHOT (2P & 3P) EVENTS & TIMEOUT
     // ==========================================
     socket.on('whot_play_card', async (data) => {
         const { roomId, username, cardIndex, chosenShape } = data;
@@ -1528,7 +1619,7 @@ io.on('connection', (socket) => {
         if (!playerHand || cardIndex < 0 || cardIndex >= playerHand.length) return;
 
         const card = playerHand[cardIndex];
-        const opponent = room.players.find(p => p !== username);
+        const nextOpponent = getNextWhotPlayer(room, username, 0);
 
         if (room.pendingPick > 0) {
             socket.emit('whot_invalid_move', { message: `You must draw ${room.pendingPick} cards from the market!` });
@@ -1557,7 +1648,8 @@ io.on('connection', (socket) => {
         if (playerHand.length === 0) {
             delete activeRooms[roomId];
             try {
-                const payoutInfo = await settleMatchWinner(room, username, 'Naija Whot');
+                const label = `Naija Whot (${room.playerCount || room.players.length}P)`;
+                const payoutInfo = await settleMatchWinner(room, username, label);
                 io.to(roomId).emit('whot_game_over', {
                     winner: username,
                     reason: 'cards_finished',
@@ -1577,24 +1669,43 @@ io.on('connection', (socket) => {
             const validShapes = ['circle', 'triangle', 'cross', 'square', 'star'];
             const shapeToCall = validShapes.includes(chosenShape) ? chosenShape : 'circle';
             room.calledShape = shapeToCall;
-            room.turn = opponent;
+            room.turn = nextOpponent;
             room.lastAction = `${username} played WHOT 20 and called ${shapeToCall.toUpperCase()}!`;
         } else if (card.number === 1) {
             room.turn = username;
             room.lastAction = `${username} played HOLD ON (1)! ${username} plays again!`;
         } else if (card.number === 8) {
-            room.turn = username;
-            room.lastAction = `${username} played SUSPENSION (8)! ${opponent} is skipped!`;
+            if (room.players.length >= 3) {
+                const afterSkip = getNextWhotPlayer(room, username, 1);
+                room.turn = afterSkip;
+                room.lastAction = `${username} played SUSPENSION (8)! ${nextOpponent} is skipped → ${afterSkip}'s turn!`;
+            } else {
+                room.turn = username;
+                room.lastAction = `${username} played SUSPENSION (8)! ${nextOpponent} is skipped!`;
+            }
         } else if (card.number === 2) {
             room.pendingPick = 2;
-            room.turn = opponent;
-            room.lastAction = `${username} played PICK TWO (2)! ${opponent} must draw 2 cards!`;
+            room.turn = nextOpponent;
+            room.lastAction = `${username} played PICK TWO (2)! ${nextOpponent} must draw 2 cards!`;
         } else if (card.number === 14) {
-            room.pendingPick = 1;
-            room.turn = opponent;
-            room.lastAction = `${username} played GENERAL MARKET (14)! ${opponent} must draw 1 card!`;
+            if (room.players.length >= 3) {
+                const otherPlayers = room.players.filter(p => p !== username);
+                otherPlayers.forEach(opp => {
+                    const drawn = drawFromWhotDeck(room, 1);
+                    if (drawn.length > 0 && room.hands[opp]) {
+                        room.hands[opp].push(...drawn);
+                    }
+                });
+                room.pendingPick = 0;
+                room.turn = username;
+                room.lastAction = `${username} played GENERAL MARKET (14)! All rivals drew 1 card; ${username} plays again!`;
+            } else {
+                room.pendingPick = 1;
+                room.turn = nextOpponent;
+                room.lastAction = `${username} played GENERAL MARKET (14)! ${nextOpponent} must draw 1 card!`;
+            }
         } else {
-            room.turn = opponent;
+            room.turn = nextOpponent;
             room.lastAction = `${username} played ${card.shape.toUpperCase()} ${card.number}.`;
         }
 
@@ -1607,26 +1718,16 @@ io.on('connection', (socket) => {
         if (!room || room.gameType !== 'whot') return;
         if (room.turn !== username) return;
 
-        const opponent = room.players.find(p => p !== username);
+        const nextOpponent = getNextWhotPlayer(room, username, 0);
         const drawCount = room.pendingPick > 0 ? room.pendingPick : 1;
 
-        for (let i = 0; i < drawCount; i++) {
-            if (room.deck.length === 0 && room.discardPile.length > 1) {
-                const currentTop = room.discardPile.pop();
-                room.deck = room.discardPile.splice(0);
-                room.discardPile = [currentTop];
-                for (let j = room.deck.length - 1; j > 0; j--) {
-                    const k = Math.floor(Math.random() * (j + 1));
-                    [room.deck[j], room.deck[k]] = [room.deck[k], room.deck[j]];
-                }
-            }
-            if (room.deck.length > 0) {
-                room.hands[username].push(room.deck.pop());
-            }
+        const drawnCards = drawFromWhotDeck(room, drawCount);
+        if (drawnCards.length > 0) {
+            room.hands[username].push(...drawnCards);
         }
 
         room.pendingPick = 0;
-        room.turn = opponent;
+        room.turn = nextOpponent;
         room.lastAction = `${username} drew ${drawCount} card${drawCount > 1 ? 's' : ''} from the market.`;
 
         emitWhotState(roomId);
@@ -1638,12 +1739,15 @@ io.on('connection', (socket) => {
         if (!room || room.gameType !== 'whot') return;
         if (room.turn !== username) return;
 
-        const opponent = room.players.find(p => p !== username);
-        if (room.deck.length > 0) {
-            room.hands[username].push(room.deck.pop());
+        const nextOpponent = getNextWhotPlayer(room, username, 0);
+        const drawCount = room.pendingPick > 0 ? room.pendingPick : 1;
+        const drawnCards = drawFromWhotDeck(room, drawCount);
+        if (drawnCards.length > 0) {
+            room.hands[username].push(...drawnCards);
         }
-        room.turn = opponent;
-        room.lastAction = `⏱️ ${username} timed out! Auto-drew 1 card. Turn passed to ${opponent}.`;
+        room.pendingPick = 0;
+        room.turn = nextOpponent;
+        room.lastAction = `⏱️ ${username} timed out! Auto-drew ${drawCount} card${drawCount > 1 ? 's' : ''}. Turn passed to ${nextOpponent}.`;
         emitWhotState(roomId);
     });
 
@@ -1653,6 +1757,8 @@ io.on('connection', (socket) => {
         for (const [code, chal] of Object.entries(reservedChallenges)) {
             if (chal.hostUsername === username) {
                 delete reservedChallenges[code];
+            } else if (Array.isArray(chal.joinedPlayers)) {
+                chal.joinedPlayers = chal.joinedPlayers.filter(p => p.username !== username);
             }
         }
         broadcastLoungeStats();
@@ -1814,17 +1920,33 @@ io.on('connection', (socket) => {
             for (const [code, chal] of Object.entries(reservedChallenges)) {
                 if (chal.hostUsername === socket.authUsername) {
                     delete reservedChallenges[code];
+                } else if (Array.isArray(chal.joinedPlayers)) {
+                    chal.joinedPlayers = chal.joinedPlayers.filter(p => p.username !== socket.authUsername);
                 }
             }
 
             for (const [roomId, room] of Object.entries(activeRooms)) {
                 if (room.players.includes(socket.authUsername)) {
+                    if (room.gameType === 'whot' && room.players.length >= 3) {
+                        const nextTurn = room.turn === socket.authUsername
+                            ? getNextWhotPlayer(room, socket.authUsername, 0)
+                            : room.turn;
+                        room.players = room.players.filter(p => p !== socket.authUsername);
+                        delete room.hands[socket.authUsername];
+                        room.pendingPick = 0;
+                        room.turn = nextTurn;
+                        room.lastAction = `⚠️ ${socket.authUsername} disconnected and forfeited! Remaining 2 players continue for the full pot.`;
+                        emitWhotState(roomId);
+                        continue;
+                    }
+
                     const winner = room.players.find(p => p !== socket.authUsername);
                     clearEqRoomTimer(room);
                     delete activeRooms[roomId];
                     try {
                         if (room.gameType === 'whot') {
-                            const payoutInfo = await settleMatchWinner(room, winner, 'Naija Whot (Opponent Disconnected)');
+                            const label = `Naija Whot (${room.playerCount || 2}P - Opponent Disconnected)`;
+                            const payoutInfo = await settleMatchWinner(room, winner, label);
                             io.to(roomId).emit('whot_game_over', {
                                 winner,
                                 reason: 'opponent_disconnected',
