@@ -550,6 +550,37 @@ async function settleMatchWinner(room, winner, gameLabel = 'Emoji Treasure Hunt'
     }
 }
 
+function emitWhotQueueStatus(stake, playerCount) {
+    const pc = Number(playerCount) === 3 ? 3 : 2;
+    const queuedForTier = waitingPlayers.filter(p =>
+        p.gameType === 'whot' &&
+        Number(p.stake) === Number(stake) &&
+        (Number(p.playerCount) === 3 ? 3 : 2) === pc &&
+        !p.challengeCode
+    );
+
+    const joinedCount = queuedForTier.length;
+    const remainingCount = Math.max(1, pc - joinedCount);
+
+    queuedForTier.forEach(entry => {
+        const otherWaiters = queuedForTier
+            .filter(other => other.username !== entry.username)
+            .map(other => ({ username: other.username, cardCount: 0 }));
+
+        const targetSocket = io.sockets.sockets.get(entry.socketId) || io.sockets.sockets.get(activeUserSessions[entry.username]);
+        if (targetSocket) {
+            targetSocket.emit('whot_queue_status', {
+                stake: Number(stake),
+                playerCount: pc,
+                joinedCount,
+                requiredPlayers: pc,
+                remainingCount,
+                waitingPlayers: otherWaiters
+            });
+        }
+    });
+}
+
 function emitWhotState(roomId) {
     const room = activeRooms[roomId];
     if (!room || room.gameType !== 'whot') return;
@@ -949,7 +980,6 @@ io.on('connection', (socket) => {
 
         challenge.joinedPlayers = [...activeJoined, { socketId: socket.id, username }];
 
-        // If 3-player Whot challenge still needs 1 more player, keep waiting
         if (challenge.joinedPlayers.length < requiredPlayers) {
             waitingPlayers.push({
                 socketId: socket.id,
@@ -1499,6 +1529,9 @@ io.on('connection', (socket) => {
             }
         } else {
             waitingPlayers.push({ socketId: socket.id, username, stake: numericStake, gameType, playerCount: requiredPlayers });
+            if (gameType === 'whot') {
+                emitWhotQueueStatus(numericStake, requiredPlayers);
+            }
             broadcastLoungeStats();
         }
     });
@@ -1753,6 +1786,7 @@ io.on('connection', (socket) => {
 
     socket.on('leave_queue', (data) => {
         const { username } = data;
+        const removedWhot = waitingPlayers.filter(p => p.username === username && p.gameType === 'whot');
         waitingPlayers = waitingPlayers.filter(p => p.username !== username);
         for (const [code, chal] of Object.entries(reservedChallenges)) {
             if (chal.hostUsername === username) {
@@ -1761,6 +1795,7 @@ io.on('connection', (socket) => {
                 chal.joinedPlayers = chal.joinedPlayers.filter(p => p.username !== username);
             }
         }
+        removedWhot.forEach(entry => emitWhotQueueStatus(entry.stake, entry.playerCount));
         broadcastLoungeStats();
     });
 
@@ -1914,7 +1949,9 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', async () => {
+        const removedWhot = waitingPlayers.filter(p => p.socketId === socket.id && p.gameType === 'whot');
         waitingPlayers = waitingPlayers.filter(p => p.socketId !== socket.id);
+        removedWhot.forEach(entry => emitWhotQueueStatus(entry.stake, entry.playerCount));
 
         if (socket.authUsername) {
             for (const [code, chal] of Object.entries(reservedChallenges)) {

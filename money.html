@@ -1601,6 +1601,16 @@
         }
     });
 
+    function formatWhotWaitingBanner(joinedCount, requiredPlayers) {
+        const pc = Number(requiredPlayers) === 3 ? 3 : 2;
+        const joined = Math.max(1, Math.min(pc, Number(joinedCount) || 1));
+        const remaining = Math.max(1, pc - joined);
+        if (pc === 3 && remaining === 1) {
+            return '⏳ WAITING FOR 1 MORE PLAYER TO JOIN THE TABLE...';
+        }
+        return `⏳ WAITING FOR ${remaining} MORE PLAYER${remaining === 1 ? '' : 'S'} TO JOIN TABLE...`;
+    }
+
     function renderWhotLobbyStatsAndPayouts() {
         const stakeTiers = [100, 500, 1000, 5000, 10000, 25000];
         const pc = selectedWhotPlayerCount;
@@ -1732,8 +1742,10 @@
                     lastWhotAction = '';
                     switchScreen('whot-game-screen');
                     if (res.waitingMore) {
-                        document.getElementById('whot-mode-badge').innerText = `${res.requiredPlayers} Players`;
-                        document.getElementById('whot-turn-banner').innerText = `⏳ Joined (${res.joinedCount}/${res.requiredPlayers})! Waiting for 3rd player...`;
+                        const reqP = Number(res.requiredPlayers) === 3 ? 3 : 2;
+                        const joined = Number(res.joinedCount) || 2;
+                        document.getElementById('whot-mode-badge').innerText = `${reqP} Players (${joined}/${reqP} Seated)`;
+                        document.getElementById('whot-turn-banner').innerText = formatWhotWaitingBanner(joined, reqP);
                     } else {
                         document.getElementById('whot-turn-banner').innerText = "⏳ Joining private challenge match...";
                     }
@@ -3625,16 +3637,16 @@
         lastWhotAction = '';
 
         switchScreen('whot-game-screen');
-        document.getElementById('whot-mode-badge').innerText = `${pc} Players (₦${(stakeAmount * pc).toLocaleString()} Pot)`;
+        document.getElementById('whot-mode-badge').innerText = `${pc} Players (1/${pc} Seated • ₦${(stakeAmount * pc).toLocaleString()} Pot)`;
         renderWhotRivalsBar(
             pc === 3
-                ? [{ username: 'Waiting R1...', cardCount: 0 }, { username: 'Waiting R2...', cardCount: 0 }]
+                ? [{ username: 'Open Seat 1...', cardCount: 0 }, { username: 'Open Seat 2...', cardCount: 0 }]
                 : [{ username: 'Searching...', cardCount: 0 }],
             null
         );
-        document.getElementById('whot-turn-banner').innerText = pc === 3
-            ? '⏳ Waiting for 2 more players to join table...'
-            : '⏳ Waiting for opponent to join table...';
+        const turnBanner = document.getElementById('whot-turn-banner');
+        turnBanner.innerText = formatWhotWaitingBanner(1, pc);
+        turnBanner.style.borderColor = '#334155';
         document.getElementById('whot-my-hand').innerHTML = '';
         document.getElementById('whot-whatsapp-invite-box').style.display = 'block';
 
@@ -3646,6 +3658,33 @@
             playerCount: pc
         });
     }
+
+    socket.on('whot_queue_status', (data) => {
+        if (!data || gameActive) return;
+        const pc = Number(data.playerCount) === 3 ? 3 : 2;
+        const joined = Number(data.joinedCount) || 1;
+        const totalPot = Number(data.stake || selectedStake || 0) * pc;
+
+        const modeBadge = document.getElementById('whot-mode-badge');
+        if (modeBadge) {
+            modeBadge.innerText = `${pc} Players (${joined}/${pc} Seated • ₦${totalPot.toLocaleString()} Pot)`;
+        }
+
+        const chips = [];
+        const existingWaiters = Array.isArray(data.waitingPlayers) ? data.waitingPlayers : [];
+        existingWaiters.forEach(w => chips.push({ username: w.username, cardCount: 0 }));
+        const openSlots = Math.max(0, (pc - 1) - chips.length);
+        for (let i = 0; i < openSlots; i++) {
+            chips.push({ username: 'Open Seat...', cardCount: 0 });
+        }
+        renderWhotRivalsBar(chips, null);
+
+        const turnBanner = document.getElementById('whot-turn-banner');
+        if (turnBanner) {
+            turnBanner.innerText = formatWhotWaitingBanner(joined, pc);
+            turnBanner.style.borderColor = '#facc15';
+        }
+    });
 
     socket.on('whot_state_update', (state) => {
         currentRoomId = state.roomId;
